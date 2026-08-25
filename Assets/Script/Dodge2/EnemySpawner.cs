@@ -1,8 +1,21 @@
+using System;
+using Mono.Cecil;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
-// Bullet / BulletSpawner 구조를 참고해서 만든 별도의 Enemy 스폰 스크립트
-// Wall 4면 중 하나에서 Enemy A~D 프리팹을 랜덤하게 생성해서
-// 플레이어 방향 또는 랜덤 방향으로 날아가게 만든다.
+// =============================================================================
+// EnemySpawner.cs
+// -----------------------------------------------------------------------------
+// 역할 : 일정 주기로 아레나(벽 4면) 바깥쪽에서 Enemy A~D 프리팹을 랜덤하게
+//        생성해서, 플레이어 방향 또는 랜덤 방향으로 날려보낸다.
+// 붙는 곳 : PlayScene.unity의 "EnemySpawner" 오브젝트
+// 참고 : Bullet / BulletSpawner(레거시 DODGE1) 구조를 참고해서 만든 스크립트.
+// 주의(멀티플레이) : Instantiate()로 로컬에만 생성하고, 조준 대상도
+//        FindFirstObjectByType<Player>()로 씬에서 아무 플레이어나 하나 찾아온다.
+//        플레이어가 여러 명이면 항상 같은 한 명만 조준 대상이 되고, 적도
+//        클라이언트마다 따로 생성돼서 서로 다른 화면을 보게 된다.
+//        (Enemy.cs와 마찬가지로 멀티플레이 후속 작업 대상)
+// =============================================================================
 public class EnemySpawner : MonoBehaviour
 {
     [Header("스폰할 Enemy 프리팹 (Enemy A~D 드래그)")]
@@ -23,24 +36,48 @@ public class EnemySpawner : MonoBehaviour
     public float spawnInset = 3f;       // 벽에서 안쪽으로 얼마나 띄워서 스폰할지
     public float spawnHeight = 1f;
 
-    private Transform target;
-    private float spawnRate;
-    private float timeAfterSpawn;
-
-    void Start()
+    private Transform target; // 조준 대상 (플레이어)
+    private float spawnRate; // 다음 스폰까지 걸리는 시간 (매번 랜덤하게 다시 뽑음)
+    private float timeAfterSpawn; // 마지막 스폰 이후 경과 시간
+    private bool gameStarted = false; // 게임시작 신호 받기 전엔 false
+    
+    void OnEnable()
     {
+        PlayerSpawner.LocalPlayerSpawned += HandleGameStart;
+    }
+
+    void OnDisable()
+    {
+        PlayerSpawner.LocalPlayerSpawned -= HandleGameStart;
+    }
+
+    private void HandleGameStart()
+    {
+        // 조준 대상(플레이어)을 찾고, 첫 스폰 주기를 랜덤으로 정한다
         timeAfterSpawn = 0f;
         spawnRate = Random.Range(spawnRateMin, spawnRateMax);
 
-        Player player = FindFirstObjectByType<Player>();
+        Player player = FindFirstObjectByType<Player>(); // 캐릭터가 실제로 존재
+
         if (player != null)
         {
             target = player.transform;
         }
+
+        gameStarted = true;
     }
 
+    
+    void Start()
+    {
+        //HandleGameStart로 옮겨뒀으니 비워둠
+    }
+
+    // 시간을 세다가 spawnRate가 지나면 적 하나를 스폰하고 다음 주기를 다시 뽑는다
     void Update()
     {
+        if (!gameStarted) return; //신호를 받기 전엔 아무것도 안함
+        
         timeAfterSpawn += Time.deltaTime;
 
         if (timeAfterSpawn >= spawnRate)
@@ -61,7 +98,7 @@ public class EnemySpawner : MonoBehaviour
         // 1. 벽 하나를 랜덤으로 선택 (0:남, 1:북, 2:동, 3:서)
         int side = Random.Range(0, 4);
         Vector3 spawnPos;
-        Vector3 inwardNormal;
+        Vector3 inwardNormal; // 그 벽에서 아레나 안쪽을 향하는 방향
 
         switch (side)
         {
@@ -90,7 +127,7 @@ public class EnemySpawner : MonoBehaviour
         Enemy enemy = enemyObj.GetComponent<Enemy>();
         if (enemy == null)
         {
-            enemy = enemyObj.AddComponent<Enemy>();
+            enemy = enemyObj.AddComponent<Enemy>(); // 프리팹에 Enemy 컴포넌트가 안 붙어있으면 여기서 붙여줌
         }
         enemy.speed = enemySpeed;
 
@@ -98,12 +135,12 @@ public class EnemySpawner : MonoBehaviour
         Vector3 direction;
         if (target != null && Random.value < aimAtPlayerChance)
         {
-            direction = target.position - spawnPos;
+            direction = target.position - spawnPos; // 플레이어를 향해 직선으로
         }
         else
         {
             float randomAngle = Random.Range(-60f, 60f);
-            direction = Quaternion.Euler(0f, randomAngle, 0f) * inwardNormal;
+            direction = Quaternion.Euler(0f, randomAngle, 0f) * inwardNormal; // 안쪽 방향에서 좌우로 최대 60도 틀어서
         }
 
         enemy.SetDirection(direction);
