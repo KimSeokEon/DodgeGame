@@ -18,9 +18,12 @@ public class Follow : MonoBehaviour
 
     }
 
-    // target 위치 + offset을 그대로 자기 위치로 사용 (target이 없으면 NullReferenceException 발생 주의)
+    // target 위치 + offset을 그대로 자기 위치로 사용.
+    // target이 아직 없거나(캐릭터 스폰 전) 파괴된 경우엔 그냥 스킵 (씬에 남아있던
+    // 중복 캐릭터가 파괴되는 등의 상황에서 MissingReferenceException 나던 것 방지)
     void Update()
     {
+        if (target == null) return;
         transform.position = target.position + offset;
     }
 }

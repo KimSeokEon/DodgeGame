@@ -14,20 +14,19 @@ public class NetworkLauncher : MonoBehaviour
 {
     async void Start()
     {
+        if (FindFirstObjectByType<NetworkRunner>() != null) return; // 로비에서 넘어온 경우 새로 접속하지 않음
+
         var runner = gameObject.AddComponent<NetworkRunner>();
-        runner.ProvideInput = true; // 이 클라이언트가 입력을 보낸다는 의미
+        runner.ProvideInput = true;
 
         var startArgs = new StartGameArgs()
         {
-            GameMode = GameMode.Shared,
-            SessionName = "DodgeRoom", // 같은 이름이면 같은 방에 모임
+            GameMode = GameModeState.Mode,       // 기존엔 GameMode.Shared 였던 걸 이걸로 교체
+            SessionName = GameModeState.RoomName, // 기존엔 "DodgeRoom" 였던 걸 이걸로 교체
             Scene = SceneRef.FromIndex(UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex),
             SceneManager = gameObject.AddComponent<NetworkSceneManagerDefault>()
         };
-        
-        //Debug.Log("[NetworkLauncher] Start");
 
         await runner.StartGame(startArgs);
-        //Debug.Log("[NetworkLauncher]Start Game");
     }
 }
