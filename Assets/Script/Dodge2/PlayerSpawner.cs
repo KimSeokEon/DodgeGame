@@ -29,6 +29,9 @@ using UnityEngine;
 // =============================================================================
 public class PlayerSpawner : SimulationBehaviour, IPlayerJoined
 {
+    [Header("PlayerId별 스폰 위치 (씬에 빈 오브젝트 만들어서 연결)")]
+    public Transform[] spawnPoints;
+    
     public GameObject PlayerPrefab; // Assets/Resources/Player (1).prefab (NetworkObject가 붙어있는 네트워크 프리팹)
 
     public static event Action LocalPlayerSpawned; // 내 캐릭터가 스폰된 후에 보낼 신호
@@ -64,15 +67,23 @@ public class PlayerSpawner : SimulationBehaviour, IPlayerJoined
         if (spawned) return;
         spawned = true;
 
-        var playerObj = runner.Spawn(PlayerPrefab, Vector3.zero, Quaternion.identity, localPlayer);
-
-        // 카메라가 방금 생성된 내 캐릭터를 따라가도록 연결
-        var follow = FindFirstObjectByType<Follow>();
-        if (follow != null)
+        // PlayerId로 스폰 지점 선택 (포인트 수보다 많아지면 wrap)
+        Vector3 spawnPos = Vector3.zero;
+        Quaternion spawnRot = Quaternion.identity;
+        if (spawnPoints != null && spawnPoints.Length > 0)
         {
-            follow.target = playerObj.transform;
+            int idx = localPlayer.PlayerId % spawnPoints.Length;
+            Transform t = spawnPoints[idx];
+            spawnPos = t.position;
+            spawnRot = t.rotation;
         }
 
-        LocalPlayerSpawned?.Invoke(); // 캐릭터 생성이 끝난 이후에 신호 전송
+        var playerObj = runner.Spawn(PlayerPrefab, spawnPos, spawnRot, localPlayer);
+
+        var follow = FindFirstObjectByType<Follow>();
+        if (follow != null)
+            follow.target = playerObj.transform;
+
+        LocalPlayerSpawned?.Invoke();
     }
 }

@@ -14,16 +14,41 @@ using UnityEngine.UIElements;
 //           PlayerSpawner.cs가 이 프리팹을 Runner.Spawn()으로 생성해서 붙여준다.
 // 네트워크 : Fusion의 NetworkBehaviour를 상속. 캐릭터가 여러 명 접속해도
 //           "이게 내 캐릭터인지"는 HasInputAuthority로 판단한다.
-//           (주의) 아직 currentHealth/isDead 같은 상태값이 [Networked]로
-//           선언되어 있지 않아서, 다른 클라이언트 화면에는 체력/사망 상태가
-//           동기화되지 않는다. 이건 멀티플레이 후속 작업 대상.
+//   - 이동/구르기 입력 : owner(HasInputAuthority)에서만 FixedUpdateNetwork로 처리, 위치는 NetworkTransform이 동기화
+//   - 애니메이션 상태(isRun/isWalk/Dodge) : [Networked]로 공유, Render()에서 전 클라가 Animator에 반영
+//   - 체력/다운(Health/IsDead) : owner만 변경, 데미지는 마스터 Enemy가 RPC_ApplyHit()로 통보
+//     하트 UI/피격 연출/다운·부활 애니메이션은 Render()에서 값 변화를 감지해 전 클라가 재생
+//   - 부활 : 체력 0이면 "다운" 상태(몸은 남음). 살아있는 팀원이 reviveRange 안에 reviveDuration초
+//     머물면 owner가 스스로 부활(Health=reviveHealth). 전원 다운일 때만 게임오버.
 // =============================================================================
 public class Player : NetworkBehaviour
 {
     private MeshRenderer[] bodyRenderers; //캐릭터 몸 파츠
-    private bool isInvincible = false;
     public float invincibleDuration = 1.2f; // 무적 지속 시간
     public float flashInterval = 0.1f; // 깜박이는 간격
+
+    // ── 피격/체력/사망 (네트워크 동기화) ──────────────────────────────
+    // Health/IsDead는 이 캐릭터의 owner(Shared Mode에선 StateAuthority)만 값을 바꾸고,
+    // 모든 클라는 Render()에서 값 변화를 감지해 하트 UI/피격 연출/사망 애니메이션을 재생한다.
+    // 데미지는 마스터의 Enemy.OnTriggerEnter가 RPC_ApplyHit()로 통보해서 들어온다.
+    [Networked] public int Health { get; private set; }
+    [Networked] public bool IsDead { get; private set; }
+    [Networked] private TickTimer InvincibleTimer { get; set; } // 피격 후 무적(i-frame)
+
+    private int _lastSeenHealth;  // Render에서 "이번에 체력이 줄었나" 판단용
+    private bool _lastSeenIsDead; // Render에서 "이번에 죽었나/부활했나" 판단용
+    private float _downedSince;   // 언제 다운됐는지 (전멸 게임오버 유예 시간 계산용)
+
+    [Header("부활 (다운된 팀원 살리기)")]
+    public float reviveRange = 2f;    // 이 거리 안에 살아있는 팀원이 있으면 부활 진행
+    public float reviveDuration = 3f; // 부활에 필요한 시간(초)
+    public int reviveHealth = 1;      // 부활 시 돌려주는 하트 수
+
+    // 다운 상태에서 근처 팀원이 채우는 부활 게이지 (0 ~ reviveDuration). owner만 씀.
+    [Networked] private float ReviveProgress { get; set; }
+
+    // 부활 게이지 진행률 0~1 (머리 위 UI 등에서 읽어쓰기 좋게). 다운 상태에서만 의미 있음.
+    public float ReviveProgress01 => reviveDuration > 0f ? Mathf.Clamp01(ReviveProgress / reviveDuration) : 0f;
 
     // 매 틱 FixedUpdateNetwork()에서 읽어서 이동에 쓰는 입력값들
     float hAxis;
@@ -36,15 +61,24 @@ public class Player : NetworkBehaviour
     // GameManager2가 생존 타이머/게임오버를 전부 담당함 (SurvivalTimer.cs는 GameManager2로 통합됨)
     private GameManager2 gameManager;
 
-    [Header("Heart3 -> 2 -> 1  순서로 등록")] public Animator[] heartAnimators; // 하트 UI 3개, TakeDamage될 때마다 순서대로 Disappear 애니메이션 재생
-
-    private int currentHealth; // 남은 하트 개수. Awake()에서 heartAnimators.Length로 초기화됨
+    [Header("Heart3 -> 2 -> 1  순서로 등록")] public Animator[] heartAnimators; // 하트 UI 3개, 체력이 깎일 때마다 순서대로 Disappear 애니메이션 재생
 
     private Rigidbody rb;
     Vector3 moveVec; // 이번 틱에 이동할 방향(정규화됨)
 
     private Animator anim; // 캐릭터 모델의 Animator (isRun/isWalk/Dodge/Die 파라미터 제어)
-    private bool isDead = false;
+
+    // 이동/걷기 애니메이션 상태를 네트워크로 공유한다.
+    // FixedUpdateNetwork()는 내 캐릭터(HasInputAuthority)에서만 도므로, 이 값을 쓰지 않으면
+    // 상대 클라에서는 그 캐릭터의 Animator가 갱신되지 않아 계속 Idle로 보인다.
+    // authority 쪽에서 값을 쓰고, Render()에서 모든 클라가 Animator에 반영한다.
+    [Networked] private bool NetIsRun { get; set; }
+    [Networked] private bool NetIsWalk { get; set; }
+
+    // 구르기는 "한 번 터지는" 트리거라 bool로는 못 넘긴다. authority가 구를 때마다
+    // 이 숫자를 1 올리고, 모든 클라가 Render()에서 값이 바뀐 걸 감지하면 Dodge 트리거를 쏜다.
+    [Networked] private int DodgeVersion { get; set; }
+    private int _lastSeenDodgeVersion; // 이 클라가 마지막으로 반영한 DodgeVersion
 
     [Header("구르기")]
     public float dodgespeedMultiplier = 2f; // 구르는 동안 속도 배율
@@ -61,7 +95,6 @@ public class Player : NetworkBehaviour
     void Awake()
     {
         anim = GetComponentInChildren<Animator>();
-        currentHealth = heartAnimators.Length; // 하트 개수 = 시작 체력
         rb = GetComponent<Rigidbody>();
         bodyRenderers = GetComponentsInChildren<MeshRenderer>(true); // 피격 시 빨갛게 깜박일 대상들
     }
@@ -74,6 +107,19 @@ public class Player : NetworkBehaviour
         }
 
         gameManager = FindFirstObjectByType<GameManager2>(); // 죽었을 때 타이머 정지 / 게임오버 화면을 띄우기 위해 미리 캐싱
+    }
+
+    public override void Spawned()
+    {
+        // owner만 초기 체력을 세팅한다 (proxy는 네트워크로 값을 받음).
+        if (HasStateAuthority)
+            Health = heartAnimators.Length;
+
+        // 늦게 접속한 경우 현재 상태를 기준값으로 잡아, 스폰되자마자 옛날 연출이
+        // 한 번 재생되는 걸 막는다.
+        _lastSeenDodgeVersion = DodgeVersion;
+        _lastSeenHealth = Health;
+        _lastSeenIsDead = IsDead;
     }
 
     // 일반 Update(): 화면 프레임마다 확실히 호출되므로, "눌린 순간에만 true인" 입력(GetKeyDown)은
@@ -96,7 +142,14 @@ public class Player : NetworkBehaviour
     public override void FixedUpdateNetwork()
     {
         if (!HasInputAuthority) return; // 내 캐릭터가 아니면 여기서 끝
-        if (isDead) return; //죽은뒤엔 이동 정지
+
+        if (IsDead) //다운 상태: 이동 정지 + 근처 팀원이 있으면 부활 게이지 채우기
+        {
+            rb.linearVelocity = Vector3.zero;
+            if (HasStateAuthority)
+                UpdateRevive();
+            return;
+        }
 
         if (dodgeCooldownTimer > 0f)
             dodgeCooldownTimer -= Runner.DeltaTime;
@@ -128,12 +181,14 @@ public class Player : NetworkBehaviour
 
             if (!isDodging && dodgeCooldownTimer <= 0f)
             {
+                DodgeVersion++; // 모든 클라에 "구르기 시작" 알림 (Render에서 트리거 재생)
                 StartCoroutine(DodgeRoutine());
             }
         }
 
-        anim.SetBool("isRun", moveVec != Vector3.zero);
-        anim.SetBool("isWalk", wDown);
+        // 애니메이션 상태는 네트워크 변수에만 쓴다 (실제 Animator 반영은 Render()에서 전 클라가 함)
+        NetIsRun = moveVec != Vector3.zero;
+        NetIsWalk = wDown;
 
         if (moveVec != Vector3.zero)
             transform.LookAt(transform.position + moveVec); //나아가는 방향으로 바라본다
@@ -144,61 +199,160 @@ public class Player : NetworkBehaviour
         rb.linearVelocity = new Vector3(horizontalVelocity.x, rb.linearVelocity.y, horizontalVelocity.z); // y(중력)는 그대로 두고 수평 이동만 덮어씀
     }
 
+    // Fusion이 렌더 프레임마다 호출한다 (내 캐릭터/상대 캐릭터 모두).
+    // 네트워크로 공유된 이동 상태를 Animator에 반영해서, 상대 클라에서도
+    // 그 캐릭터가 뛰거나 걷는 모습이 보이게 한다.
+    public override void Render()
+    {
+        if (anim == null) return;
+        anim.SetBool("isRun", NetIsRun);
+        anim.SetBool("isWalk", NetIsWalk);
+
+        // authority가 구르면 DodgeVersion이 바뀐다 → 모든 클라(내/상대)가 여기서 트리거를 쏜다
+        if (DodgeVersion != _lastSeenDodgeVersion)
+        {
+            _lastSeenDodgeVersion = DodgeVersion;
+            anim.SetTrigger("Dodge");
+        }
+
+        // 체력이 줄었으면: 줄어든 하트를 왼쪽부터 순서대로 사라지게 + (죽지 않았으면) 빨간 피격 연출
+        if (Health < _lastSeenHealth)
+        {
+            for (int h = _lastSeenHealth; h > Health; h--)
+            {
+                int heartIndex = heartAnimators.Length - h;
+                if (heartIndex >= 0 && heartIndex < heartAnimators.Length && heartAnimators[heartIndex] != null)
+                    heartAnimators[heartIndex].SetTrigger("Disappear");
+            }
+
+            if (!IsDead)
+                StartCoroutine(HitFlashRoutine());
+        }
+        // 체력이 늘었으면(부활): 돌아온 하트를 다시 보이게 (Heart 애니메이터를 기본 상태로 리셋)
+        else if (Health > _lastSeenHealth)
+        {
+            for (int i = heartAnimators.Length - Health; i < heartAnimators.Length; i++)
+            {
+                if (i >= 0 && i < heartAnimators.Length && heartAnimators[i] != null)
+                    heartAnimators[i].Rebind();
+            }
+        }
+        _lastSeenHealth = Health;
+
+        // 다운/부활 순간 연출은 모든 클라에서
+        if (IsDead != _lastSeenIsDead)
+        {
+            _lastSeenIsDead = IsDead;
+            if (IsDead) HandleDeath();
+            else        HandleRevive();
+        }
+
+        // 전원 다운(co-op 전멸) → 게임오버. 내 화면에서만 처리하고, 마지막 다운 후 잠깐 유예.
+        if (IsDead && HasInputAuthority && Time.time - _downedSince > 1.2f && AllPlayersDowned())
+        {
+            if (gameManager != null) gameManager.Endgame();
+        }
+    }
+
     // 구르기 진행: 짧은 시간 동안 isDodging을 켜서 속도 배율을 올리고, 쿨다운을 시작한다.
     private IEnumerator DodgeRoutine()
     {
         isDodging = true;
         dodgeCooldownTimer = dodgeCooldown;
 
-        anim.SetTrigger("Dodge");
+        // Dodge 애니메이션 트리거는 Render()에서 DodgeVersion 변화를 감지해 재생한다
+        // (여기서 직접 쏘면 상대 클라에는 안 보임)
 
         yield return new WaitForSeconds(dodgeDuration);
 
         isDodging = false;
     }
 
-    // 적(Enemy)에게 맞았을 때 Enemy.cs가 호출하는 함수. 하트 하나를 깎고, 0이 되면 사망 처리.
-    public void TakeDamage()
+    // 마스터의 Enemy.OnTriggerEnter가 "이 플레이어가 적에 맞았다"고 통보하는 RPC.
+    // RpcSources.All  : 아무 클라(=마스터)나 호출 가능
+    // RpcTargets.StateAuthority : 이 캐릭터의 owner에서만 실행됨 → 거기서 Health를 깎는다
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    public void RPC_ApplyHit()
     {
-        if (currentHealth <= 0 || isInvincible) return; // 이미 죽었거나 무적 중이면 무시
+        if (IsDead) return;
+        if (!InvincibleTimer.ExpiredOrNotRunning(Runner)) return; // 무적(i-frame) 중이면 무시
 
-        int heartIndex = heartAnimators.Length - currentHealth; // 왼쪽 하트부터 순서대로 사라지게
-        heartAnimators[heartIndex].SetTrigger("Disappear");
+        Health = Mathf.Max(0, Health - 1);
+        InvincibleTimer = TickTimer.CreateFromSeconds(Runner, invincibleDuration);
 
-        currentHealth--;
+        if (Health <= 0)
+            IsDead = true;
+    }
 
-        if (currentHealth <= 0)
+    // 다운 순간 처리. Render()에서 IsDead가 false→true로 바뀐 걸 감지하면 모든 클라에서 불린다.
+    // 여기서 죽이지 않고 "쓰러진" 상태로 둔다 — 팀원이 부활시킬 수 있음. 전원 다운 시에만 게임오버.
+    private void HandleDeath()
+    {
+        anim.SetTrigger("Die");
+
+        if (HasStateAuthority)
         {
-            Die();
+            rb.linearVelocity = Vector3.zero; // 쓰러지는 순간 미끄러지지 않게
+            ReviveProgress = 0f;
+        }
+
+        _downedSince = Time.time;
+    }
+
+    // 부활 순간 처리. Render()에서 IsDead가 true→false로 바뀐 걸 감지하면 모든 클라에서 불린다.
+    private void HandleRevive()
+    {
+        // Die 상태는 빠져나가는 전이가 없는 막다른 상태라, 직접 Idle로 되돌린다.
+        anim.ResetTrigger("Die");
+        anim.Play("Idle", 0, 0f);
+    }
+
+    // 다운 상태에서 매 틱 실행 (내 캐릭터의 StateAuthority에서만).
+    // reviveRange 안에 살아있는 팀원이 있으면 ReviveProgress를 채우고, 다 차면 스스로 부활한다.
+    private void UpdateRevive()
+    {
+        bool beingRevived = false;
+
+        foreach (var p in FindObjectsByType<Player>(FindObjectsSortMode.None))
+        {
+            if (p == this || p.IsDead) continue;
+            if (Vector3.Distance(p.transform.position, transform.position) <= reviveRange)
+            {
+                beingRevived = true;
+                break;
+            }
+        }
+
+        if (beingRevived)
+        {
+            ReviveProgress += Runner.DeltaTime;
+            if (ReviveProgress >= reviveDuration)
+            {
+                Health = Mathf.Clamp(reviveHealth, 1, heartAnimators.Length);
+                IsDead = false;
+                ReviveProgress = 0f;
+                InvincibleTimer = TickTimer.CreateFromSeconds(Runner, invincibleDuration); // 부활 직후 잠깐 무적
+            }
         }
         else
         {
-            StartCoroutine(HitFlashRoutine()); //죽지 않았을 때, 깜빡임 + 무적
+            ReviveProgress = 0f; // 팀원이 범위를 벗어나면 진행 초기화
         }
     }
 
-    // 사망 처리 시작: 이동을 멈추고, 죽는 애니메이션을 재생한 뒤 DieRoutine()으로 마무리를 넘긴다.
-    public void Die()
+    // 씬의 모든 플레이어가 다운 상태인가 (co-op 전멸 판정). 혼자 플레이면 = 내가 다운되면 true.
+    private static bool AllPlayersDowned()
     {
-        if (isDead) return; //죽은뒤엔 이동 정지
-        isDead = true;
-
-        if (gameManager != null)
-        {
-            gameManager.StopTimer(); // 죽는 그 순간 바로 타이머 정지
-        }
-
-        rb.linearVelocity = Vector3.zero; //죽은 순간 미끄럼지지 않게 정지
-        anim.SetTrigger("Die");
-
-        StartCoroutine(DieRoutine());
+        var players = FindObjectsByType<Player>(FindObjectsSortMode.None);
+        if (players.Length == 0) return false;
+        foreach (var p in players)
+            if (!p.IsDead) return false;
+        return true;
     }
 
-    // 맞았을 때(죽지 않은 경우) 잠깐 빨갛게 깜박이면서 무적 시간을 부여하는 연출
+    // 맞았을 때(죽지 않은 경우) 잠깐 빨갛게 깜박이는 연출. 무적 시간 자체는 InvincibleTimer가 담당.
     private IEnumerator HitFlashRoutine()
     {
-        isInvincible = true;
-
         float timer = 0f;
         bool showRed = true;
 
@@ -215,7 +369,6 @@ public class Player : NetworkBehaviour
         }
 
         ClearBodyColor();
-        isInvincible = false;
     }
 
     // 캐릭터 몸 파츠 전체를 지정한 색으로 덮어씌우는 헬퍼 (피격 깜박임용).
@@ -247,16 +400,4 @@ public class Player : NetworkBehaviour
         }
     }
 
-    // 죽는 애니메이션이 끝날 시간(1.5초)만큼 기다렸다가 캐릭터를 비활성화하고 게임오버 화면을 띄운다.
-    private IEnumerator DieRoutine()
-    {
-        yield return new WaitForSeconds(1.5f);
-
-        gameObject.SetActive(false);
-
-        if (gameManager != null)
-        {
-            gameManager.Endgame();
-        }
-    }
 }

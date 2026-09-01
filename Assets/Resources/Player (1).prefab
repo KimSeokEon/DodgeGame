@@ -381,8 +381,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Player
   invincibleDuration: 1.2
   flashInterval: 0.1
+  _Health: 0
+  _IsDead: 0
+  reviveRange: 2
+  reviveDuration: 1
+  reviveHealth: 1
   speed: 15
-  survivalTimer: {fileID: 0}
   cam: {fileID: 0}
   heartAnimators:
   - {fileID: 1462900805401882654}

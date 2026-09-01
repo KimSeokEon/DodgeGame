@@ -40,7 +40,9 @@ public class LobbyUIManager : MonoBehaviour
         var sb = new StringBuilder();
         foreach (var p in players)
         {
-            int id = p.Object != null ? p.Object.InputAuthority.PlayerId : -1;
+            if (p.Object == null || !p.Object.IsValid) continue; // 스폰 완료된 것만
+
+            int id = p.Object.InputAuthority.PlayerId;
             string readyText = p.IsReady ? "Ready" : "Not Ready";
             sb.AppendLine($"Player {id}{(p.HasStateAuthority ? " (Me)" : "")} - {readyText}");
         }
@@ -55,14 +57,20 @@ public class LobbyUIManager : MonoBehaviour
             readyButtonLabel.text = localPlayer.IsReady ? "READY" : "READY";
 
         bool isHost = runner != null && runner.IsSharedModeMasterClient;
+
+        // 스폰이 끝난(Object.IsValid) LobbyPlayer만 대상으로 전원 Ready 여부 확인
         var allPlayers = FindObjectsByType<LobbyPlayer>(FindObjectsSortMode.None);
-        bool allReady = allPlayers.Length > 0 && allPlayers.All(p => p.IsReady);
+        bool allReady = allPlayers.Length > 0 &&
+                        allPlayers.All(p => p.Object != null && p.Object.IsValid && p.IsReady);
+
         startButton.interactable = isHost && allReady;
     }
 
     private LobbyPlayer FindLocalLobbyPlayer()
     {
-        return FindObjectsByType<LobbyPlayer>(FindObjectsSortMode.None).FirstOrDefault(p => p.HasStateAuthority);
+        // p.HasStateAuthority / p.IsReady 는 Spawned() 전엔 접근 불가 → Object.IsValid 가드
+        return FindObjectsByType<LobbyPlayer>(FindObjectsSortMode.None)
+            .FirstOrDefault(p => p.Object != null && p.Object.IsValid && p.HasStateAuthority);
     }
 
     private void OnReadyClicked()
