@@ -20,10 +20,62 @@ PrefabInstance:
       propertyPath: m_Center.y
       value: 6.72
       objectReference: {fileID: 0}
+    - target: {fileID: 711410832947096865, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
+      propertyPath: Flags
+      value: 262145
+      objectReference: {fileID: 0}
+    - target: {fileID: 711410832947096865, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
+      propertyPath: SortKey
+      value: 2615459614
+      objectReference: {fileID: 0}
+    - target: {fileID: 711410832947096865, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
+      propertyPath: NetworkedBehaviours.Array.size
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 711410832947096865, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
+      propertyPath: 'NetworkedBehaviours.Array.data[0]'
+      value: 
+      objectReference: {fileID: 3476327134764653028}
+    - target: {fileID: 711410832947096865, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
+      propertyPath: 'NetworkedBehaviours.Array.data[1]'
+      value: 
+      objectReference: {fileID: 7389402138647581987}
+    - target: {fileID: 5034527581628498800, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
+      propertyPath: m_Materials.Array.size
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 5034527581628498800, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
+      propertyPath: 'm_Materials.Array.data[2]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 9a8f33e9198f6e64c9cbf17a60d24684, type: 2}
+    - target: {fileID: 5841515343654020698, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
+      propertyPath: m_Materials.Array.size
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 5841515343654020698, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
+      propertyPath: 'm_Materials.Array.data[2]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 9a8f33e9198f6e64c9cbf17a60d24684, type: 2}
+    - target: {fileID: 7489050066271685362, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
+      propertyPath: m_Materials.Array.size
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 7489050066271685362, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
+      propertyPath: 'm_Materials.Array.data[2]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 9a8f33e9198f6e64c9cbf17a60d24684, type: 2}
     - target: {fileID: 7988094277207216310, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
       propertyPath: m_Name
       value: Enemy D Variant
       objectReference: {fileID: 0}
+    - target: {fileID: 8960487368471979870, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
+      propertyPath: m_Materials.Array.size
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 8960487368471979870, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
+      propertyPath: 'm_Materials.Array.data[2]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 9a8f33e9198f6e64c9cbf17a60d24684, type: 2}
     - target: {fileID: 9133255185617633366, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
       propertyPath: m_LocalPosition.x
       value: -12.597375
@@ -126,3 +178,25 @@ CapsuleCollider:
   m_Height: 6.88
   m_Direction: 2
   m_Center: {x: 3.27, y: 1.06, z: 0.05}
+--- !u!114 &3476327134764653028 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 8165776194762439359, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
+  m_PrefabInstance: {fileID: 4714370728077894491}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3438399768207913965}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c653f1afcfbdaa947ac0fb4c632fc7d4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Enemy
+--- !u!114 &7389402138647581987 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 2873473768889316984, guid: 83dab506297948d4d8d34c4fe12431ee, type: 3}
+  m_PrefabInstance: {fileID: 4714370728077894491}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3438399768207913965}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 158639473, guid: e725a070cec140c4caffb81624c8c787, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Fusion.Runtime.dll::Fusion.NetworkTransform
