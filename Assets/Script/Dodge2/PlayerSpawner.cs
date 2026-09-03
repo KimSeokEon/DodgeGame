@@ -23,13 +23,14 @@ using UnityEngine;
 //       씬에 있던 이 컴포넌트"를 러너에 자동으로 등록해주지 않기 때문으로 보임.
 //       그래서 이 경우엔 자기 Runner 프로퍼티 대신, 씬에서 직접 NetworkRunner를
 //       찾아서(FindFirstObjectByType) 그걸로 스폰한다.
-// 주의(멀티플레이) : 스폰 위치가 항상 Vector3.zero라서, 여러 명이 접속하면
-//        전부 같은 자리에 겹쳐서 생성된다. 접속 순서(PlayerRef)별로 다른
-//        스폰 지점을 골라주는 게 후속 작업.
+// 스폰 위치 : spawnPoints[] 에 넣어둔 지점들에 "접속 순서"대로 배치한다.
+//        PlayerId 를 직접 인덱스로 쓰면 안 됨 — Shared Mode 의 PlayerId 는
+//        Photon actor number(1부터 시작, 중간에 나가면 구멍) 라 순번이 아니다.
+//        대신 ActivePlayers 중 나보다 PlayerId 작은 사람 수 = 내 0-based 순번.
 // =============================================================================
 public class PlayerSpawner : SimulationBehaviour, IPlayerJoined
 {
-    [Header("PlayerId별 스폰 위치 (씬에 빈 오브젝트 만들어서 연결)")]
+    [Header("스폰 위치 (접속 순서대로 배치. 빈 오브젝트 만들어서 연결)")]
     public Transform[] spawnPoints;
 
     public GameObject PlayerPrefab; // Assets/Resources/Player (1).prefab (NetworkObject가 붙어있는 네트워크 프리팹)
@@ -70,15 +71,23 @@ public class PlayerSpawner : SimulationBehaviour, IPlayerJoined
         if (spawned) return;
         spawned = true;
 
-        // PlayerId로 스폰 지점 선택 (포인트 수보다 많아지면 wrap)
+        // 내 "접속 순번" = ActivePlayers 중 나보다 PlayerId 작은 사람 수 (0,1,2,3...)
+        // PlayerId 를 그대로 쓰면 안 됨 (Photon actor 값이라 1부터 시작 + 구멍 가능)
+        int slot = 0;
+        foreach (var p in runner.ActivePlayers)
+            if (p.PlayerId < localPlayer.PlayerId) slot++;
+
         Vector3 spawnPos = Vector3.zero;
         Quaternion spawnRot = Quaternion.identity;
         if (spawnPoints != null && spawnPoints.Length > 0)
         {
-            int idx = localPlayer.PlayerId % spawnPoints.Length;
+            int idx = slot % spawnPoints.Length; // 인원이 포인트보다 많으면 wrap
             Transform t = spawnPoints[idx];
-            spawnPos = t.position;
-            spawnRot = t.rotation;
+            if (t != null)
+            {
+                spawnPos = t.position;
+                spawnRot = t.rotation;
+            }
         }
 
         var playerObj = runner.Spawn(PlayerPrefab, spawnPos, spawnRot, localPlayer);
