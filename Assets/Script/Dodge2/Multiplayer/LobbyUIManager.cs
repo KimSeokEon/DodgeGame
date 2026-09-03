@@ -36,17 +36,22 @@ public class LobbyUIManager : MonoBehaviour
 
     private void RefreshPlayerList()
     {
-        var players = FindObjectsByType<LobbyPlayer>(FindObjectsSortMode.None);
+        var players = FindObjectsByType<LobbyPlayer>(FindObjectsSortMode.None)
+            .Where(p => p.Object != null && p.Object.IsValid)
+            .OrderBy(p => p.Object.InputAuthority.PlayerId)
+            .ToList();
+
         var sb = new StringBuilder();
+
         foreach (var p in players)
         {
-            if (p.Object == null || !p.Object.IsValid) continue; // 스폰 완료된 것만
-
-            int id = p.Object.InputAuthority.PlayerId;
-            string readyText = p.IsReady ? "Ready" : "Not Ready";
-            sb.AppendLine($"Player {id}{(p.HasStateAuthority ? " (Me)" : "")} - {readyText}");
+            string nk = p.Nick.ToString();
+            string name = string.IsNullOrEmpty(nk) ? LobbyPlayer.Fallback : nk;
+            sb.AppendLine($"{name}{(p.HasStateAuthority ? " (Me)" : "")} - {(p.IsReady ? "Ready" : "Not Ready")}");
         }
-        if (players.Length == 0) sb.AppendLine("Connecting..");
+
+        if (players.Count == 0) sb.AppendLine("Connecting..");
+
         playerListText.text = sb.ToString();
     }
 
