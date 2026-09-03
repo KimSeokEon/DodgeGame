@@ -40,6 +40,8 @@ public class GameManager2 : MonoBehaviour
 
     private CanvasGroup restartTextGroup;
     private CanvasGroup bestTimeGroup;
+    private TMP_Text restartTextTmp;   // restartText 안의 텍스트 (재시작 인원 카운트 표시용)
+    private string restartBaseText;    // 원래 문구 ("Press 'R' to Restart")
     private bool isGameOver; // 게임오버 UI가 떴는지 (R키로 재시작 가능해지는 시점)
     public bool IsGameOver => isGameOver; // Player가 R키 입력 여부를 판단할 때 읽음
 
@@ -69,6 +71,9 @@ public class GameManager2 : MonoBehaviour
                 restartTextGroup = restartText.AddComponent<CanvasGroup>();
 
             restartTextGroup.alpha = 0f; // 처음엔 안 보이게
+
+            restartTextTmp = restartText.GetComponentInChildren<TMP_Text>(true);
+            if (restartTextTmp != null) restartBaseText = restartTextTmp.text;
         }
 
         if (besttime != null)
@@ -81,12 +86,29 @@ public class GameManager2 : MonoBehaviour
         }
     }
 
-    // 매 프레임: 공유 시계(GameClock)의 경과 시간을 그대로 화면에 표시
+    // 매 프레임: 공유 시계(GameClock) 표시 + (게임오버 시) 재시작 인원 카운트 표시
     void Update()
     {
         if (timerText != null && GameClock.Instance != null)
         {
             timerText.text = FormatTime(GameClock.Instance.ElapsedSeconds);
+        }
+
+        // 게임오버 상태: "몇 명이 R을 눌렀는지" 를 (n/m) 으로 표시 (멀티일 때만)
+        if (isGameOver && restartTextTmp != null)
+        {
+            var players = FindObjectsByType<Player>(FindObjectsInactive.Exclude);
+            if (players.Length > 1)
+            {
+                int ready = 0;
+                foreach (var p in players)
+                    if (p.WantsRestart) ready++;
+                restartTextTmp.text = $"{restartBaseText}  ({ready}/{players.Length})";
+            }
+            else
+            {
+                restartTextTmp.text = restartBaseText;
+            }
         }
     }
 

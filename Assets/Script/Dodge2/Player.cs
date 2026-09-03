@@ -247,6 +247,10 @@ public class Player : NetworkBehaviour
 
             if (!IsDead)
                 StartCoroutine(HitFlashRoutine());
+
+            // 화면 빨간 비네트 깜빡임 — "내 캐릭터"가 맞았을 때 내 화면에서만
+            if (HasInputAuthority && DamageVignette.Instance != null)
+                DamageVignette.Instance.Flash(IsDead ? 3 : DamageVignette.Instance.blinks);
         }
         // 체력이 늘었으면(부활): 돌아온 하트를 다시 보이게 (Heart 애니메이터를 기본 상태로 리셋)
         else if (Health > _lastSeenHealth)
