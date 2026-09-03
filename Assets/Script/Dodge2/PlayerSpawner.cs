@@ -31,8 +31,11 @@ public class PlayerSpawner : SimulationBehaviour, IPlayerJoined
 {
     [Header("PlayerId별 스폰 위치 (씬에 빈 오브젝트 만들어서 연결)")]
     public Transform[] spawnPoints;
-    
+
     public GameObject PlayerPrefab; // Assets/Resources/Player (1).prefab (NetworkObject가 붙어있는 네트워크 프리팹)
+
+    [Header("네트워크 공유 생존 타이머 (Assets/Resources/GameClock.prefab)")]
+    public GameObject GameClockPrefab; // 마스터(또는 싱글)가 딱 한 번 스폰
 
     public static event Action LocalPlayerSpawned; // 내 캐릭터가 스폰된 후에 보낼 신호
 
@@ -84,6 +87,23 @@ public class PlayerSpawner : SimulationBehaviour, IPlayerJoined
         if (follow != null)
             follow.target = playerObj.transform;
 
+        // ★ 다른 스크립트(EnemySpawner, GameManager2 등)에 먼저 신호를 보낸다.
+        //   아래 GameClock 스폰이 실패하더라도 게임 진행 자체는 막히지 않도록 순서를 앞에 둔다.
         LocalPlayerSpawned?.Invoke();
+
+        // 공유 생존 타이머는 마스터(또는 싱글)가 씬에 한 번만 스폰한다.
+        if (GameClockPrefab != null
+            && GameClock.Instance == null
+            && (runner.IsServer || runner.IsSharedModeMasterClient))
+        {
+            try
+            {
+                runner.Spawn(GameClockPrefab);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"GameClock 스폰 실패 (프리팹 테이블 등록 확인 필요): {e.Message}");
+            }
+        }
     }
 }

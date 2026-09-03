@@ -8,13 +8,12 @@ using UnityEngine.SceneManagement;
 // =============================================================================
 // GameManager2.cs
 // -----------------------------------------------------------------------------
-// 역할 : PlayScene의 게임 상태(생존 타이머, 게임오버 연출, 최고기록, 재시작)를
-//        전부 관리하는 매니저. Player.cs가 죽으면 이 스크립트의 Endgame()을 호출한다.
+// 역할 : PlayScene의 게임오버 연출 / 최고기록 / 타이머 표시를 관리하는 매니저.
+//        Player가 전원 다운 상태가 되면 이 스크립트의 Endgame()을 호출한다.
 // 붙는 곳 : PlayScene.unity의 "GameManager" 오브젝트 (씬에 하나만 존재)
-// 참고 : 원래 타이머 로직은 별도 파일 SurvivalTimer.cs였는데, 사실상 GameManager의
-//        일부라 이 파일로 통합했다. isGameOver / isTimerRunning 두 플래그가 따로
-//        있는 이유는 "죽는 즉시 타이머는 멈추지만(Die), 게임오버 UI는 죽는 애니메이션이
-//        끝난 1.5초 뒤에 뜨기(Endgame) 때문" — 두 시점이 다르다.
+// 참고 : 생존 시간 자체는 GameClock(NetworkBehaviour)이 네트워크로 공유·관리한다.
+//        여기서는 GameClock.Instance.ElapsedSeconds를 읽어 timerText에 표시만 하고,
+//        게임오버 시 StopTimer() → GameClock.Stop() 으로 정지 신호만 전달한다.
 // =============================================================================
 public class GameManager2 : MonoBehaviour
 {
@@ -42,26 +41,10 @@ public class GameManager2 : MonoBehaviour
     private CanvasGroup restartTextGroup;
     private CanvasGroup bestTimeGroup;
     private bool isGameOver; // 게임오버 UI가 떴는지 (R키로 재시작 가능해지는 시점)
+    public bool IsGameOver => isGameOver; // Player가 R키 입력 여부를 판단할 때 읽음
 
-    // 원래 SurvivalTimer.cs에 있던 상태 (여기로 통합)
-    // isGameOver와는 별개 플래그: Die()에서 즉시 멈추고, Endgame()은 1.5초 뒤에 불림
-    private float elapsedTime; // 지금까지 생존한 시간(초)
-    private bool isTimerRunning = false; // 타이머가 흐르고 있는 중인지
-
-    void OnEnable()
-    {
-        PlayerSpawner.LocalPlayerSpawned += HandleGameStart;
-    }
-
-    void OnDisable()
-    {
-        PlayerSpawner.LocalPlayerSpawned -= HandleGameStart;
-    }
-
-    private void HandleGameStart()
-    {
-        isTimerRunning = true;
-    }
+    // 생존 시간은 이제 GameClock(NetworkBehaviour)이 관리한다. 여기선 표시만 한다.
+    // 예전엔 각 클라가 Time.deltaTime을 따로 누적해서 호스트/게스트가 어긋났었다.
 
     // 시작할 때 게임오버/재시작/최고기록 UI를 전부 숨겨두는 초기화 작업
     void Start()
@@ -98,34 +81,26 @@ public class GameManager2 : MonoBehaviour
         }
     }
 
-    // 매 프레임: 타이머 카운트업 + 게임오버 상태에서 R키 눌리면 씬 재시작
+    // 매 프레임: 공유 시계(GameClock)의 경과 시간을 그대로 화면에 표시
     void Update()
     {
-        if (isTimerRunning)
+        if (timerText != null && GameClock.Instance != null)
         {
-            elapsedTime += Time.deltaTime;
-            if (timerText != null)
-            {
-                timerText.text = FormatTime(elapsedTime);
-            }
-        }
-
-        if (isGameOver && Input.GetKeyDown(KeyCode.R))
-        {
-            SceneManager.LoadScene(SceneManager.GetActiveScene().name);
+            timerText.text = FormatTime(GameClock.Instance.ElapsedSeconds);
         }
     }
 
-    // 원래 SurvivalTimer.StopTimer() — Player.Die()에서 죽는 즉시 호출됨
+    // 게임오버 시 Endgame()에서 호출. 실제 정지는 마스터에서만 일어나고 전 클라에 복제된다.
     public void StopTimer()
     {
-        isTimerRunning = false;
+        if (GameClock.Instance != null)
+            GameClock.Instance.Stop();
     }
 
-    // 원래 SurvivalTimer.GetElapsedTime()
+    // 최고기록 비교용 — 공유 시계에서 읽는다
     public float GetElapsedTime()
     {
-        return elapsedTime;
+        return GameClock.Instance != null ? GameClock.Instance.ElapsedSeconds : 0f;
     }
 
     // Player가 죽었을 때 호출: 게임오버 로고를 띄운다

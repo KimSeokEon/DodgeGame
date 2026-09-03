@@ -4,7 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Fusion;
 using UnityEngine.UIElements;
-
+using UnityEngine.SceneManagement;
 
 // =============================================================================
 // Player.cs
@@ -34,6 +34,10 @@ public class Player : NetworkBehaviour
     [Networked] public int Health { get; private set; }
     [Networked] public bool IsDead { get; private set; }
     [Networked] private TickTimer InvincibleTimer { get; set; } // 피격 후 무적(i-frame)
+    
+    
+    [Networked] public bool WantsRestart { get; private set; }
+    private bool _restartTriggered; // 마스터가 씬 리로드를 한 번만 호출하도록
 
     private int _lastSeenHealth;  // Render에서 "이번에 체력이 줄었나" 판단용
     private bool _lastSeenIsDead; // Render에서 "이번에 죽었나/부활했나" 판단용
@@ -135,6 +139,11 @@ public class Player : NetworkBehaviour
         {
             dodgeRequested = true;
         }
+        // 게임오버 상태에서 R → 내 "재시작 원함" 표시 (LobbyPlayer.ToggleReady와 같은 패턴)
+        if (Input.GetKeyDown(KeyCode.R) && gameManager != null && gameManager.IsGameOver)
+        {
+            WantsRestart = true;
+        }
         
     }
 
@@ -143,11 +152,22 @@ public class Player : NetworkBehaviour
     {
         if (!HasInputAuthority) return; // 내 캐릭터가 아니면 여기서 끝
 
-        if (IsDead) //다운 상태: 이동 정지 + 근처 팀원이 있으면 부활 게이지 채우기
+        if (IsDead)
         {
             rb.linearVelocity = Vector3.zero;
             if (HasStateAuthority)
                 UpdateRevive();
+
+            // 마스터(또는 싱글)의 캐릭터가 전원 의사를 확인하고 씬을 리로드. 딱 한 번.
+            if (!_restartTriggered
+                && Runner != null && (Runner.IsServer || Runner.IsSharedModeMasterClient)
+                && AllPlayersWantRestart())
+            {
+                _restartTriggered = true;
+                int idx = SceneManager.GetActiveScene().buildIndex;
+                Runner.LoadScene(SceneRef.FromIndex(idx));
+            }
+
             return;
         }
 
@@ -349,6 +369,16 @@ public class Player : NetworkBehaviour
             if (!p.IsDead) return false;
         return true;
     }
+    // 씬의 모든 플레이어가 재시작을 원하는가
+    private static bool AllPlayersWantRestart()
+    {
+        var players = FindObjectsByType<Player>(FindObjectsSortMode.None);
+        if (players.Length == 0) return false;
+        foreach (var p in players)
+            if (!p.WantsRestart) return false;
+        return true;
+    }
+    
 
     // 맞았을 때(죽지 않은 경우) 잠깐 빨갛게 깜박이는 연출. 무적 시간 자체는 InvincibleTimer가 담당.
     private IEnumerator HitFlashRoutine()
@@ -400,4 +430,31 @@ public class Player : NetworkBehaviour
         }
     }
 
+#if UNITY_EDITOR
+    // ── 에디터 디버그용 (빌드에서 제외됨). PlayerEditor 커스텀 인스펙터의 버튼이 호출한다.
+    //    자기 캐릭터(StateAuthority)에만 먹는다.
+    public void Editor_Hit()
+    {
+        if (!HasStateAuthority || IsDead) return;
+        Health = Mathf.Max(0, Health - 1);
+        InvincibleTimer = TickTimer.CreateFromSeconds(Runner, invincibleDuration);
+        if (Health <= 0) IsDead = true;
+    }
+
+    public void Editor_ForceDown()
+    {
+        if (!HasStateAuthority || IsDead) return;
+        Health = 0;
+        IsDead = true;
+    }
+
+    public void Editor_Revive()
+    {
+        if (!HasStateAuthority || !IsDead) return;
+        Health = Mathf.Clamp(reviveHealth, 1, heartAnimators != null ? heartAnimators.Length : 3);
+        IsDead = false;
+        ReviveProgress = 0f;
+        InvincibleTimer = TickTimer.CreateFromSeconds(Runner, invincibleDuration);
+    }
+#endif
 }

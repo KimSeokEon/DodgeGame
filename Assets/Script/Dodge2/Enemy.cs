@@ -154,12 +154,18 @@ public class Enemy : NetworkBehaviour
         }
         else if (other.CompareTag("Player"))
         {
+            Player player = other.GetComponentInParent<Player>();
+
+            // 다운된 플레이어(또는 판별 불가)는 그냥 통과한다.
+            // 적을 despawn하지도, 데미지를 주지도 않음 → 쓰러진 몸이 "적 지우개"가 되지 않게.
+            // 부활은 콜라이더가 아니라 거리(transform.position)로 판정하므로 영향 없음.
+            if (player == null || player.IsDead)
+                return;
+
             // 마스터가 유일한 충돌 판정자. 맞은 플레이어의 owner에게 RPC로 데미지를 통보한다.
             // (Health를 여기서 직접 못 깎는 이유: 마스터는 상대 플레이어 오브젝트의
             //  StateAuthority가 아니라서 그 [Networked] 값을 쓸 수 없음)
-            Player player = other.GetComponent<Player>();
-            if (player != null)
-                player.RPC_ApplyHit();
+            player.RPC_ApplyHit();
 
             Runner.Despawn(Object);
         }

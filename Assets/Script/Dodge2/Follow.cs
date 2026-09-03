@@ -10,7 +10,7 @@ using UnityEngine;
 // =============================================================================
 public class Follow : MonoBehaviour
 {
-    public Transform target; // 따라갈 대상 (내 캐릭터)
+    [ReadOnly] public Transform target; // 따라갈 대상 (내 캐릭터). PlayerSpawner가 스폰 직후 연결하므로 직접 수정 X
     public Vector3 offset;   // 대상 위치에서 얼마나 떨어져서 볼지 (카메라 각도/거리)
 
     void Start()
