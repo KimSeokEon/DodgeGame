@@ -39,6 +39,7 @@ public class PauseMenuManager : MonoBehaviour
     [SerializeField] private float fadeOutTime = 0.4f;
 
     private Coroutine _fade;
+    private bool _leaving; // Back to Main Menu 진행 중 (중복 클릭 방지)
 
     void Awake()
     {
@@ -58,6 +59,7 @@ public class PauseMenuManager : MonoBehaviour
 
     void Update()
     {
+        if (_leaving) return;
         if (Input.GetKeyDown(KeyCode.Escape))
             Toggle();
     }
@@ -65,6 +67,7 @@ public class PauseMenuManager : MonoBehaviour
     // ── 열기 / 닫기 ────────────────────────────────────────────
     public void Toggle()
     {
+        if (_leaving) return;
         if (IsOpen) Close();
         else Open();
     }
@@ -116,7 +119,12 @@ public class PauseMenuManager : MonoBehaviour
     }
 
     // ── 버튼 핸들러 ────────────────────────────────────────────
-    public void OnResumeButton() => Close();
+    // Resume : 메뉴 닫기 (블러 페이드아웃 + 입력 잠금 해제)
+    public void OnResumeButton()
+    {
+        if (_leaving) return;
+        Close();
+    }
 
     // Restart : 기능 미구현 (사용자 요청). 구현 방법 —
     //  ● 싱글플레이:
@@ -134,27 +142,40 @@ public class PauseMenuManager : MonoBehaviour
         Debug.Log("[PauseMenu] Restart 눌림 — 기능 미구현 (PauseMenuManager.OnRestartButton 참고)");
     }
 
+    // Back to Main Menu : Fusion 세션을 정리하고 메인 메뉴 씬으로.
     public void OnMainMenuButton()
     {
+        if (_leaving) return;
+        _leaving = true;
         StartCoroutine(BackToMainMenuRoutine());
     }
 
     private IEnumerator BackToMainMenuRoutine()
     {
-        // 블러/입력잠금 상태 원복
+        // 메뉴/블러/입력잠금 상태 원복
         IsOpen = false;
+        if (menuRoot != null) menuRoot.SetActive(false);
+        if (_fade != null) { StopCoroutine(_fade); _fade = null; }
         PauseBlurFeature.Active = false;
         PauseBlurFeature.Weight = 0f;
 
-        // 로비를 거쳐 온 경우 러너는 DontDestroyOnLoad 라 직접 종료해야 한다.
+        // 다음 씬의 PlayerSpawner 가 "새로 접속" 흐름을 타도록 세션 플래그 리셋
         GameModeState.HasJoinedSession = false;
 
+        // 로비를 거쳐 온 경우 러너는 DontDestroyOnLoad 라 씬 전환만으론 안 죽는다.
+        // 직접 Shutdown 해서 방을 나간다 (destroyGameObject=true 라 러너 오브젝트도 정리됨).
         var runner = FindFirstObjectByType<NetworkRunner>();
-        if (runner != null && runner.IsRunning)
+        if (runner != null && runner.IsRunning && !runner.IsShutdown)
         {
             var task = runner.Shutdown();
-            while (!task.IsCompleted)
+
+            // 정상 종료 대기 (혹시 안 끝나도 최대 3초 후엔 그냥 진행)
+            float t = 0f;
+            while (!task.IsCompleted && t < 3f)
+            {
+                t += Time.unscaledDeltaTime;
                 yield return null;
+            }
         }
 
         SceneManager.LoadScene("MainMenu");
