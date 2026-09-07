@@ -34,6 +34,10 @@ public class PauseMenuManager : MonoBehaviour
     [Tooltip("GameModeState.Mode 가 Single 이 아니면 여기 오브젝트들을 꺼둔다")]
     [SerializeField] private GameObject[] hideInMultiplayer;
 
+    [Header("메뉴 열려 있는 동안 숨길 오브젝트 (예: 구르기 쿨타임 UI)")]
+    [Tooltip("블러가 Overlay 캔버스엔 안 먹으므로, 그냥 껐다 켠다")]
+    [SerializeField] private GameObject[] hideWhilePaused;
+
     [Header("블러 페이드 시간(초)")]
     [SerializeField] private float fadeInTime = 2f;
     [SerializeField] private float fadeOutTime = 0.4f;
@@ -79,6 +83,7 @@ public class PauseMenuManager : MonoBehaviour
 
         if (menuRoot != null) menuRoot.SetActive(true);
         ApplyMultiplayerVisibility();
+        SetHiddenWhilePaused(true);
 
         PauseBlurFeature.Active = true;
         StartFade(1f, fadeInTime);
@@ -90,7 +95,16 @@ public class PauseMenuManager : MonoBehaviour
         IsOpen = false;
 
         if (menuRoot != null) menuRoot.SetActive(false);
+        SetHiddenWhilePaused(false);
         StartFade(0f, fadeOutTime, deactivateWhenZero: true);
+    }
+
+    // 메뉴 열려 있는 동안만 특정 UI(구르기 쿨타임 등)를 숨긴다
+    private void SetHiddenWhilePaused(bool paused)
+    {
+        if (hideWhilePaused == null) return;
+        foreach (var go in hideWhilePaused)
+            if (go != null) go.SetActive(!paused);
     }
 
     // ── 블러 Weight 페이드 ─────────────────────────────────────
