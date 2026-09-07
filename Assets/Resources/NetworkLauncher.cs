@@ -16,6 +16,12 @@ public class NetworkLauncher : MonoBehaviour
     {
         if (FindFirstObjectByType<NetworkRunner>() != null) return; // 로비에서 넘어온 경우 새로 접속하지 않음
 
+        // Fusion 은 러너가 붙은 오브젝트에 DontDestroyOnLoad 를 건다. 이 오브젝트가
+        // 씬에서 다른 오브젝트(DODGE2 등) 밑에 정리돼 있으면 루트가 아니라서
+        // "DontDestroyOnLoad only works for root GameObjects" 경고가 뜬다.
+        // 러너는 재시작(Runner.LoadScene) 때 씬을 넘어 살아남아야 하므로, 루트로 분리한다.
+        if (transform.parent != null) transform.SetParent(null);
+
         var runner = gameObject.AddComponent<NetworkRunner>();
         runner.ProvideInput = true;
 
