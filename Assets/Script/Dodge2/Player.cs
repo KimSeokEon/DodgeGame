@@ -131,6 +131,7 @@ public class Player : NetworkBehaviour
     void Update()
     {
         if (!HasInputAuthority) return; // 내 캐릭터가 아니면 여기서 끝
+        if (PauseMenuManager.InputLocked) return; // 일시정지 메뉴 열림 → 입력 무시
 
         // GetKeyDown은 눌린 그 프레임에만 true라, FixedUpdateNetwork 틱과 타이밍이
         // 안 맞으면 눌러도 씹힐 수 있음. 그래서 여기서 확실히 잡아뒀다가 다음 네트워크
@@ -168,6 +169,16 @@ public class Player : NetworkBehaviour
                 Runner.LoadScene(SceneRef.FromIndex(idx));
             }
 
+            return;
+        }
+
+        // 일시정지 메뉴가 열려 있으면 이동/구르기 입력을 정지 (시간 자체는 안 멈춤)
+        if (PauseMenuManager.InputLocked)
+        {
+            rb.linearVelocity = new Vector3(0f, rb.linearVelocity.y, 0f);
+            NetIsRun = false;
+            NetIsWalk = false;
+            dodgeRequested = false;
             return;
         }
 
