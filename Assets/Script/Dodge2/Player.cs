@@ -172,7 +172,11 @@ public class Player : NetworkBehaviour
             return;
         }
 
-        // 일시정지 메뉴가 열려 있으면 이동/구르기 입력을 정지 (시간 자체는 안 멈춤)
+        // 구르기 쿨타임은 항상 흐른다 (게임은 안 멈추므로, 메뉴 열려 있어도 계속 회복)
+        if (dodgeCooldownTimer > 0f)
+            dodgeCooldownTimer -= Runner.DeltaTime;
+
+        // 일시정지 메뉴가 열려 있으면 "입력"만 막는다 (이동/새 구르기 시작). 시간은 안 멈춤.
         if (PauseMenuManager.InputLocked)
         {
             rb.linearVelocity = new Vector3(0f, rb.linearVelocity.y, 0f);
@@ -181,9 +185,6 @@ public class Player : NetworkBehaviour
             dodgeRequested = false;
             return;
         }
-
-        if (dodgeCooldownTimer > 0f)
-            dodgeCooldownTimer -= Runner.DeltaTime;
 
         if (cam == null)
         {
