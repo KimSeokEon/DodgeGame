@@ -320,6 +320,26 @@ public class Player : NetworkBehaviour
             IsDead = true;
     }
 
+    // 최대 체력(하트 칸 수). heartAnimators 길이를 그대로 쓴다.
+    public int MaxHealth => heartAnimators != null ? heartAnimators.Length : 3;
+
+    // 하트 아이템을 먹을 수 있는 상태인가 (살아있고 체력이 안 찬 경우).
+    // HeartPickup 이 "먹을 수 있을 때만" 하트를 소모하도록 이 값을 먼저 확인한다.
+    public bool CanPickUpHeart => !IsDead && Health < MaxHealth;
+
+    // 하트 아이템 획득 시 HeartPickup 이 호출하는 RPC — RPC_ApplyHit 의 반대.
+    // RpcSources.All  : 아무 클라(=마스터)나 호출 가능
+    // RpcTargets.StateAuthority : 이 캐릭터의 owner에서만 실행 → 거기서 Health를 올린다.
+    // (하트 UI 는 Render() 의 "Health 증가" 분기가 heartAnimators[i].Rebind() 로 알아서 켬)
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    public void RPC_Heal()
+    {
+        if (IsDead) return;
+        if (Health >= MaxHealth) return;
+
+        Health = Mathf.Min(MaxHealth, Health + 1);
+    }
+
     // 다운 순간 처리. Render()에서 IsDead가 false→true로 바뀐 걸 감지하면 모든 클라에서 불린다.
     // 여기서 죽이지 않고 "쓰러진" 상태로 둔다 — 팀원이 부활시킬 수 있음. 전원 다운 시에만 게임오버.
     private void HandleDeath()
@@ -455,6 +475,12 @@ public class Player : NetworkBehaviour
         Health = Mathf.Max(0, Health - 1);
         InvincibleTimer = TickTimer.CreateFromSeconds(Runner, invincibleDuration);
         if (Health <= 0) IsDead = true;
+    }
+
+    public void Editor_Heal()
+    {
+        if (!HasStateAuthority || IsDead) return;
+        Health = Mathf.Min(MaxHealth, Health + 1);
     }
 
     public void Editor_ForceDown()

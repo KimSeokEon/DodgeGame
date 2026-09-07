@@ -102,6 +102,7 @@ public class PlayerEditor : Editor
         using (new EditorGUILayout.HorizontalScope())
         {
             if (GUILayout.Button("피격 (−1)")) player.Editor_Hit();
+            if (GUILayout.Button("회복 (+1)")) player.Editor_Heal();
             if (GUILayout.Button("즉시 다운")) player.Editor_ForceDown();
             if (GUILayout.Button("부활")) player.Editor_Revive();
         }
