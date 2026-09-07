@@ -23310,8 +23310,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ff959f756011b41458900893739d1d68, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HeartPickupSpawner
-  heartPrefab: {fileID: 7599239199012839025, guid: 3534dbe41d965654694a486d5dcd9ef9, type: 3}
-  spawnInterval: 8
+  heartPrefab: {fileID: 1164809557766721391, guid: 90ec81c6f8b3dd840b026c2d0e16b730, type: 3}
+  spawnInterval: 30
   maxHeartsOnMap: 3
   minSpawnRadius: 6
   maxSpawnRadius: 12
@@ -45564,7 +45564,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 263.9}
+  m_AnchoredPosition: {x: 0, y: 237}
   m_SizeDelta: {x: 524.9329, y: 104.6407}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1438412543
@@ -50324,7 +50324,7 @@ RectTransform:
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 690, y: 1000}
+  m_SizeDelta: {x: 909.5388, y: 1064.8638}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1622414052
 MonoBehaviour:
@@ -50339,15 +50339,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
-  m_Color: {r: 0, g: 0, b: 0, a: 0.98039216}
+  m_Color: {r: 1, g: 1, b: 1, a: 0.98039216}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 10907, guid: 0000000000000000f000000000000000, type: 0}
-  m_Type: 1
+  m_Sprite: {fileID: 21300000, guid: dc3ccb792fed2ba4ba36c51a172dba3c, type: 3}
+  m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
   m_FillMethod: 3
@@ -51351,7 +51351,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: -252.47}
+  m_AnchoredPosition: {x: 0, y: -237}
   m_SizeDelta: {x: 524.9329, y: 104.6407}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1665008231
