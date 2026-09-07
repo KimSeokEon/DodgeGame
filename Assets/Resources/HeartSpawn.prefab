@@ -120,7 +120,7 @@ GameObject:
   - component: {fileID: 5609164714562514191}
   - component: {fileID: 9010794053474861886}
   m_Layer: 0
-  m_Name: Item Heart Variant
+  m_Name: HeartSpawn
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
