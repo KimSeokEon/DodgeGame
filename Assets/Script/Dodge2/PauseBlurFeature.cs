@@ -31,8 +31,10 @@ public class PauseBlurFeature : ScriptableRendererFeature
     [SerializeField] private Shader shader;
 
     [Header("룩")]
-    [Range(1f, 24f)] public float blurRadius = 8f;   // 블러 반경(픽셀)
-    [Range(0f, 0.8f)] public float darken = 0.15f;    // 배경 어둡게 (0 = 그대로)
+    [Range(1f, 40f)] public float blurRadius = 12.5f;   // 기본 블러 반경(픽셀)
+    [Range(1f, 3f)] public float edgeBlurMul = 1.6f;    // 가장자리 블러 배율 (1 = 균일)
+    [Range(0f, 0.9f)] public float darken = 0.18f;      // 중앙 어둡기 (검은 틴트)
+    [Range(0f, 0.95f)] public float edgeDarken = 0.5f;  // 가장자리 어둡기
 
     [Header("주입 시점")]
     public RenderPassEvent injectionPoint = RenderPassEvent.BeforeRenderingPostProcessing;
@@ -67,7 +69,9 @@ public class PauseBlurFeature : ScriptableRendererFeature
             return;
 
         _mat.SetFloat("_BlurRadius", blurRadius);
+        _mat.SetFloat("_EdgeBlurMul", edgeBlurMul);
         _mat.SetFloat("_Darken", darken);
+        _mat.SetFloat("_EdgeDarken", edgeDarken);
         _mat.SetFloat("_Weight", Mathf.Clamp01(Weight));
 
         _pass.renderPassEvent = injectionPoint;

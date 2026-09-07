@@ -70,8 +70,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PauseBlurFeature
   m_Active: 1
   shader: {fileID: 4800000, guid: fd4ecbf6fb7b7724d9cdbd956b8e20e4, type: 3}
-  blurRadius: 8
-  darken: 0.15
+  blurRadius: 12.5
+  edgeBlurMul: 1.6
+  darken: 0.18
+  edgeDarken: 0.5
   injectionPoint: 550
 --- !u!114 &7833122117494664109
 MonoBehaviour:
