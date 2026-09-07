@@ -68,7 +68,30 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 690041606357937042, guid: 437ad4dccfddbb64b9b2bb88be07abe4, type: 3}
       insertIndex: -1
       addedObject: {fileID: 9010794053474861886}
+    - targetCorrespondingSourceObject: {fileID: 488630065591511937, guid: 437ad4dccfddbb64b9b2bb88be07abe4, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 8750292314426760610}
   m_SourcePrefab: {fileID: 100100000, guid: 437ad4dccfddbb64b9b2bb88be07abe4, type: 3}
+--- !u!1 &7359331019092024930 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 488630065591511937, guid: 437ad4dccfddbb64b9b2bb88be07abe4, type: 3}
+  m_PrefabInstance: {fileID: 6982390209213511139}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &8750292314426760610
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7359331019092024930}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 84a29710799eb634d83ae3b253cb8809, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HeartAnim
+  bobAmplitude: 0.15
+  bobPeriod: 2
+  spinSpeed: 40
 --- !u!1 &7599239199012839025 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 690041606357937042, guid: 437ad4dccfddbb64b9b2bb88be07abe4, type: 3}
