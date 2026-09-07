@@ -23313,8 +23313,8 @@ MonoBehaviour:
   heartPrefab: {fileID: 7599239199012839025, guid: 3534dbe41d965654694a486d5dcd9ef9, type: 3}
   spawnInterval: 8
   maxHeartsOnMap: 3
-  minSpawnRadius: 3
-  maxSpawnRadius: 6
+  minSpawnRadius: 6
+  maxSpawnRadius: 12
   spawnHeight: 1
   playAreaHalfExtent: 48
 --- !u!4 &756164893 stripped
@@ -64983,67 +64983,6 @@ Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 9955c61e3a6d03744a60916c818e7326, type: 3}
   m_PrefabInstance: {fileID: 417666552}
   m_PrefabAsset: {fileID: 0}
---- !u!1001 &2083879659
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: 4671290363668908769, guid: 3534dbe41d965654694a486d5dcd9ef9, type: 3}
-      propertyPath: SortKey
-      value: 3806086537
-      objectReference: {fileID: 0}
-    - target: {fileID: 7079160970975773899, guid: 3534dbe41d965654694a486d5dcd9ef9, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7079160970975773899, guid: 3534dbe41d965654694a486d5dcd9ef9, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 2
-      objectReference: {fileID: 0}
-    - target: {fileID: 7079160970975773899, guid: 3534dbe41d965654694a486d5dcd9ef9, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7079160970975773899, guid: 3534dbe41d965654694a486d5dcd9ef9, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 7079160970975773899, guid: 3534dbe41d965654694a486d5dcd9ef9, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7079160970975773899, guid: 3534dbe41d965654694a486d5dcd9ef9, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7079160970975773899, guid: 3534dbe41d965654694a486d5dcd9ef9, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7079160970975773899, guid: 3534dbe41d965654694a486d5dcd9ef9, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7079160970975773899, guid: 3534dbe41d965654694a486d5dcd9ef9, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7079160970975773899, guid: 3534dbe41d965654694a486d5dcd9ef9, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7599239199012839025, guid: 3534dbe41d965654694a486d5dcd9ef9, type: 3}
-      propertyPath: m_Name
-      value: Item Heart Variant
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 3534dbe41d965654694a486d5dcd9ef9, type: 3}
 --- !u!4 &2085614906 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4078466002560596, guid: 4c9f6adf60a275840b716082e3482212, type: 3}
@@ -66738,4 +66677,3 @@ SceneRoots:
   - {fileID: 1529240451}
   - {fileID: 1862811493}
   - {fileID: 1454385011}
-  - {fileID: 2083879659}
