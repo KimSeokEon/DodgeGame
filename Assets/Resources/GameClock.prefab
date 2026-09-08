@@ -47,7 +47,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Fusion.Runtime.dll::Fusion.NetworkObject
   SortKey: 3498055376
   ObjectInterest: 1
-  Flags: 262145
+  Flags: 131073
   NestedObjects: []
   NetworkedBehaviours:
   - {fileID: 5888294773836212330}
@@ -64,3 +64,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 370acd76d8a1148429b70038fd9bf7bc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GameClock
+  _RestartVoteId: 0
+  _RestartVotePhase: 0
+  _RestartBallots:
+    _items: []

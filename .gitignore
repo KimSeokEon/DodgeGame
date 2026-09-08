@@ -45,3 +45,8 @@ crashlytics-build.properties
 
 # macOS
 .DS_Store
+
+# QA / dev capture artifacts (not part of the project)
+/Captures/
+/Assets/Screenshots/
+/Assets/Screenshots.meta

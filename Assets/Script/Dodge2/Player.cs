@@ -36,8 +36,10 @@ public class Player : NetworkBehaviour
     [Networked] private TickTimer InvincibleTimer { get; set; } // 피격 후 무적(i-frame)
     
     
-    [Networked] public bool WantsRestart { get; private set; }
-    private bool _restartTriggered; // 마스터가 씬 리로드를 한 번만 호출하도록
+    public bool WantsRestart => Object != null && Object.IsValid && GameClock.Instance != null
+        && GameClock.Instance.Object != null && GameClock.Instance.Object.IsValid
+        && GameClock.Instance.RestartVotePhase == GameClock.VoteOpen
+        && GameClock.Instance.RestartBallots.TryGet(Object.InputAuthority, out int vote) && vote == 1;
 
     private int _lastSeenHealth;  // Render에서 "이번에 체력이 줄었나" 판단용
     private bool _lastSeenIsDead; // Render에서 "이번에 죽었나/부활했나" 판단용
@@ -143,7 +145,7 @@ public class Player : NetworkBehaviour
         // 게임오버 상태에서 R → 내 "재시작 원함" 표시 (LobbyPlayer.ToggleReady와 같은 패턴)
         if (Input.GetKeyDown(KeyCode.R) && gameManager != null && gameManager.IsGameOver)
         {
-            WantsRestart = true;
+            if (GameClock.Instance != null) GameClock.Instance.RequestRestart();
         }
         
     }
@@ -159,16 +161,7 @@ public class Player : NetworkBehaviour
             if (HasStateAuthority)
                 UpdateRevive();
 
-            // 마스터(또는 싱글)의 캐릭터가 전원 의사를 확인하고 씬을 리로드. 딱 한 번.
-            if (!_restartTriggered
-                && Runner != null && (Runner.IsServer || Runner.IsSharedModeMasterClient)
-                && AllPlayersWantRestart())
-            {
-                _restartTriggered = true;
-                int idx = SceneManager.GetActiveScene().buildIndex;
-                Runner.LoadScene(SceneRef.FromIndex(idx));
-            }
-
+            // Restart is handled by GameClock, including while players are alive.
             return;
         }
 
@@ -405,15 +398,8 @@ public class Player : NetworkBehaviour
             if (!p.IsDead) return false;
         return true;
     }
-    // 씬의 모든 플레이어가 재시작을 원하는가
-    private static bool AllPlayersWantRestart()
-    {
-        var players = FindObjectsByType<Player>(FindObjectsSortMode.None);
-        if (players.Length == 0) return false;
-        foreach (var p in players)
-            if (!p.WantsRestart) return false;
-        return true;
-    }
+    // Restart ballots are managed by the shared GameClock.
+
     
 
     // 맞았을 때(죽지 않은 경우) 잠깐 빨갛게 깜박이는 연출. 무적 시간 자체는 InvincibleTimer가 담당.

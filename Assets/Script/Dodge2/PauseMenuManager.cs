@@ -18,7 +18,7 @@ using UnityEngine.SceneManagement;
 //
 // 버튼 배선 (캔버스 UI 는 사용자가 직접 연결):
 //   Resume        -> OnResumeButton()
-//   Restart       -> OnRestartButton()      ※ 기능 미구현. 아래 주석 참고.
+//   Restart       -> OnRestartButton() (single: immediate, multiplayer: unanimous vote)
 //   Back to Main  -> OnMainMenuButton()
 // =============================================================================
 public class PauseMenuManager : MonoBehaviour
@@ -44,9 +44,9 @@ public class PauseMenuManager : MonoBehaviour
 
     private Coroutine _fade;
     private bool _leaving; // Back to Main Menu 진행 중 (중복 클릭 방지)
-
     void Awake()
     {
+        RestartVoteUI.Create(this);
         IsOpen = false;
         if (menuRoot != null) menuRoot.SetActive(false);
         PauseBlurFeature.Active = false;
@@ -140,20 +140,17 @@ public class PauseMenuManager : MonoBehaviour
         Close();
     }
 
-    // Restart : 기능 미구현 (사용자 요청). 구현 방법 —
-    //  ● 싱글플레이:
-    //      var runner = FindFirstObjectByType<NetworkRunner>();
-    //      runner.LoadScene(SceneRef.FromIndex(SceneManager.GetActiveScene().buildIndex));
-    //    (Player.cs 의 게임오버 R키 재시작과 같은 경로)
-    //  ● 멀티플레이 (전원 동의 방식 재활용):
-    //      1) Player.cs 에 public 메서드 추가 → 내 Player 의 WantsRestart = true
-    //      2) Player.FixedUpdateNetwork 의 재시작 검사(현재 IsDead 블록 안에 있음)를
-    //         "게임오버가 아니어도" 돌도록 밖으로 빼서, AllPlayersWantRestart() 가
-    //         true 면 마스터가 Runner.LoadScene(...) 호출
-    //      3) 게임 도중 취소도 되게 하려면 Resume/Close 시 WantsRestart = false 로 되돌리기
-    public void OnRestartButton()
+    // Restart delegates to the shared authoritative controller.
+public void OnRestartButton()
     {
-        Debug.Log("[PauseMenu] Restart 눌림 — 기능 미구현 (PauseMenuManager.OnRestartButton 참고)");
+        if (_leaving) return;
+        var clock = GameClock.Instance;
+        if (clock == null || !clock.RequestRestart())
+        {
+            Debug.LogWarning("[Restart] 게임 연결 준비 중입니다. 잠시 후 다시 시도해 주세요.");
+            return;
+        }
+        Close();
     }
 
     // Back to Main Menu : Fusion 세션을 정리하고 메인 메뉴 씬으로.

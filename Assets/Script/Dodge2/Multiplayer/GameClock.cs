@@ -13,8 +13,147 @@ using UnityEngine;
 //        PlayerSpawner가 마스터(또는 싱글)에서 딱 한 번 Runner.Spawn 한다.
 // 사용 : GameManager2가 GameClock.Instance.ElapsedSeconds 를 읽어서 표시만 한다.
 // =============================================================================
+
 public class GameClock : NetworkBehaviour
 {
+    public const int VoteIdle = 0, VoteOpen = 1, VoteRejected = 2,
+        VotePassed = 3, VoteCancelled = 4, VoteTimedOut = 5, VoteFailed = 6;
+    [Networked] public int RestartVoteId { get; private set; }
+    [Networked] public int RestartVotePhase { get; private set; }
+    [Networked, Capacity(32)] public NetworkDictionary<PlayerRef, int> RestartBallots => default;
+    [Networked] public TickTimer RestartDeadline { get; private set; }
+    [Networked] private TickTimer RestartResultDeadline { get; set; }
+    private bool restartLoading;
+
+    public int RestartYesCount
+    {
+        get { int n = 0; foreach (var ballot in RestartBallots) if (ballot.Value == 1) n++; return n; }
+    }
+
+    public bool RequestRestart()
+    {
+        if (Object == null || !Object.IsValid || Runner == null ||
+            !Runner.IsRunning || Runner.IsSceneManagerBusy || restartLoading) return false;
+        RPC_RequestRestart(RestartVoteId);
+        return true;
+    }
+
+    public void CastRestartVote(int voteId, bool yes)
+    {
+        if (Object != null && Object.IsValid && Runner != null && Runner.IsRunning)
+            RPC_CastRestartVote(voteId, yes);
+    }
+
+    private bool IsActiveVoter(PlayerRef player)
+    {
+        if (player == PlayerRef.None) return false;
+        foreach (var active in Runner.ActivePlayers)
+            if (active == player) return true;
+        return false;
+    }
+
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    private void RPC_RequestRestart(int expectedVoteId, RpcInfo info = default)
+    {
+        var sender = info.Source;
+        if (sender == PlayerRef.None && info.IsInvokeLocal) sender = Runner.LocalPlayer;
+        if (!IsActiveVoter(sender) || Runner.IsSceneManagerBusy || restartLoading) return;
+        if (Runner.GameMode == GameMode.Single)
+        {
+            ReloadForRestart();
+            return;
+        }
+        // One authority serializes simultaneous requests; stale requests cannot open another round.
+        if (RestartVotePhase != VoteIdle || expectedVoteId != RestartVoteId) return;
+        int count = 0;
+        foreach (var player in Runner.ActivePlayers) count++;
+        if (count == 0 || count > 32) return;
+        RestartBallots.Clear();
+        foreach (var player in Runner.ActivePlayers) RestartBallots.Add(player, 0);
+        RestartVoteId++;
+        RestartVotePhase = VoteOpen;
+        RestartDeadline = TickTimer.CreateFromSeconds(Runner, 30f);
+    }
+
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    private void RPC_CastRestartVote(int voteId, bool yes, RpcInfo info = default)
+    {
+        var sender = info.Source;
+        if (sender == PlayerRef.None && info.IsInvokeLocal) sender = Runner.LocalPlayer;
+        if (RestartVotePhase != VoteOpen || voteId != RestartVoteId ||
+            RestartDeadline.Expired(Runner) || !IsActiveVoter(sender)) return;
+        if (!RestartBallots.TryGet(sender, out int choice) || choice != 0) return;
+        RestartBallots.Set(sender, yes ? 1 : 2);
+    }
+
+    public override void FixedUpdateNetwork()
+    {
+        if (!HasStateAuthority || restartLoading) return;
+        if (RestartVotePhase == VoteOpen)
+        {
+            var ballots = new System.Collections.Generic.Dictionary<int, int>();
+            var active = new System.Collections.Generic.List<int>();
+            foreach (var pair in RestartBallots) ballots.Add(pair.Key.PlayerId, pair.Value);
+            foreach (var player in Runner.ActivePlayers) active.Add(player.PlayerId);
+            var result = RestartVoteRules.Evaluate(ballots, active);
+            if (result == RestartVoteRules.Result.MembershipChanged) EndRestartVote(VoteCancelled);
+            else if (result == RestartVoteRules.Result.Rejected) EndRestartVote(VoteRejected);
+            else if (RestartDeadline.Expired(Runner)) EndRestartVote(VoteTimedOut);
+            else if (result == RestartVoteRules.Result.Unanimous)
+            {
+                RestartVotePhase = VotePassed;
+                // Give every screen a brief unanimous result before the scene transition.
+                RestartResultDeadline = TickTimer.CreateFromSeconds(Runner, 0.65f);
+            }
+        }
+        else if (RestartVotePhase == VotePassed)
+        {
+            var ballots = new System.Collections.Generic.Dictionary<int, int>();
+            var active = new System.Collections.Generic.List<int>();
+            foreach (var pair in RestartBallots) ballots.Add(pair.Key.PlayerId, pair.Value);
+            foreach (var player in Runner.ActivePlayers) active.Add(player.PlayerId);
+            if (RestartVoteRules.Evaluate(ballots, active) != RestartVoteRules.Result.Unanimous)
+                EndRestartVote(VoteCancelled);
+            else if (RestartResultDeadline.Expired(Runner)) ReloadForRestart();
+        }
+        else if (RestartVotePhase != VoteIdle && RestartResultDeadline.Expired(Runner))
+        {
+            RestartVotePhase = VoteIdle;
+            RestartBallots.Clear();
+        }
+    }
+
+    private void EndRestartVote(int phase)
+    {
+        RestartVotePhase = phase;
+        RestartResultDeadline = TickTimer.CreateFromSeconds(Runner, 2.5f);
+    }
+
+    private void ReloadForRestart()
+    {
+        if (restartLoading || Runner.IsSceneManagerBusy) return;
+        if (!Runner.IsServer && !Runner.IsSharedModeMasterClient) return;
+        int index = UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex;
+        if (index < 0)
+        {
+            Debug.LogError("Restart failed: active scene is missing from Build Settings.");
+            EndRestartVote(VoteFailed);
+            return;
+        }
+        restartLoading = true;
+        try
+        {
+            Runner.LoadScene(SceneRef.FromIndex(index));
+        }
+        catch (System.Exception e)
+        {
+            restartLoading = false;
+            EndRestartVote(VoteFailed);
+            Debug.LogException(e);
+        }
+    }
+// Shared survival clock.
+
     // 씬에 하나만 존재. GameManager2 등에서 편하게 접근하려고 정적으로 들고 있는다.
     public static GameClock Instance { get; private set; }
 
@@ -24,6 +163,8 @@ public class GameClock : NetworkBehaviour
 
     public override void Spawned()
     {
+        
+        // The prefab is a MasterClientObject, so its state survives a master departure.
         Instance = this;
 
         // 마스터(StateAuthority)가 시계를 시작한다. 이후 StartTick이 전 클라에 복제된다.
