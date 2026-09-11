@@ -16,7 +16,8 @@ using UnityEngine.SceneManagement;
 //           "이게 내 캐릭터인지"는 HasInputAuthority로 판단한다.
 //   - 이동/구르기 입력 : owner(HasInputAuthority)에서만 FixedUpdateNetwork로 처리, 위치는 NetworkTransform이 동기화
 //   - 애니메이션 상태(isRun/isWalk/Dodge) : [Networked]로 공유, Render()에서 전 클라가 Animator에 반영
-//   - 체력/다운(Health/IsDead) : owner만 변경, 데미지는 마스터 Enemy가 RPC_ApplyHit()로 통보
+//   - 체력/다운(Health/IsDead) : owner만 변경. 적과의 충돌은 owner가 FixedUpdateNetwork에서
+//     OverlapSphere로 매 틱 직접 검사해 스스로 깎는다 (왕복 지연 없음)
 //     하트 UI/피격 연출/다운·부활 애니메이션은 Render()에서 값 변화를 감지해 전 클라가 재생
 //   - 부활 : 체력 0이면 "다운" 상태(몸은 남음). 살아있는 팀원이 reviveRange 안에 reviveDuration초
 //     머물면 owner가 스스로 부활(Health=reviveHealth). 전원 다운일 때만 게임오버.
@@ -30,12 +31,12 @@ public class Player : NetworkBehaviour
     // ── 피격/체력/사망 (네트워크 동기화) ──────────────────────────────
     // Health/IsDead는 이 캐릭터의 owner(Shared Mode에선 StateAuthority)만 값을 바꾸고,
     // 모든 클라는 Render()에서 값 변화를 감지해 하트 UI/피격 연출/사망 애니메이션을 재생한다.
-    // 데미지는 마스터의 Enemy.OnTriggerEnter가 RPC_ApplyHit()로 통보해서 들어온다.
+    // 적과 부딪힌 판정은 맞은 플레이어 본인이 FixedUpdateNetwork의 OverlapSphere로 한다.
     [Networked] public int Health { get; private set; }
     [Networked] public bool IsDead { get; private set; }
     [Networked] private TickTimer InvincibleTimer { get; set; } // 피격 후 무적(i-frame)
-    
-    
+
+
     public bool WantsRestart => Object != null && Object.IsValid && GameClock.Instance != null
         && GameClock.Instance.Object != null && GameClock.Instance.Object.IsValid
         && GameClock.Instance.RestartVotePhase == GameClock.VoteOpen
@@ -44,6 +45,14 @@ public class Player : NetworkBehaviour
     private int _lastSeenHealth;  // Render에서 "이번에 체력이 줄었나" 판단용
     private bool _lastSeenIsDead; // Render에서 "이번에 죽었나/부활했나" 판단용
     private float _downedSince;   // 언제 다운됐는지 (전멸 게임오버 유예 시간 계산용)
+
+    // ★ 피격 판정용. OnTriggerEnter 대신 매 틱 직접 검사한다 — 게스트 쪽 적은
+    //   프록시(NetworkTransform 보간으로 움직임)라 OnTriggerEnter가 잘 안 떴었음
+    //   (호스트만 피격되고 게스트는 무적이던 버그의 원인).
+    [Header("피격 판정")]
+    public float hitRadius = 0.6f;                        // 내 몸 반경 (Scene에서 보며 조정)
+    public Vector3 hitOffset = new Vector3(0f, 1f, 0f);   // 검사 구의 중심 (발밑 기준 위로)
+    readonly Collider[] _hitBuf = new Collider[16];       // OverlapSphere 결과 버퍼 (재사용, GC 방지)
 
     [Header("부활 (다운된 팀원 살리기)")]
     public float reviveRange = 2f;    // 이 거리 안에 살아있는 팀원이 있으면 부활 진행
@@ -75,9 +84,6 @@ public class Player : NetworkBehaviour
     private Animator anim; // 캐릭터 모델의 Animator (isRun/isWalk/Dodge/Die 파라미터 제어)
 
     // 이동/걷기 애니메이션 상태를 네트워크로 공유한다.
-    // FixedUpdateNetwork()는 내 캐릭터(HasInputAuthority)에서만 도므로, 이 값을 쓰지 않으면
-    // 상대 클라에서는 그 캐릭터의 Animator가 갱신되지 않아 계속 Idle로 보인다.
-    // authority 쪽에서 값을 쓰고, Render()에서 모든 클라가 Animator에 반영한다.
     [Networked] private bool NetIsRun { get; set; }
     [Networked] private bool NetIsWalk { get; set; }
 
@@ -95,7 +101,6 @@ public class Player : NetworkBehaviour
     private bool dodgeRequested = false; // Update()에서 눌림을 감지해 저장해두고 FixedUpdateNetwork()에서 소비
 
     // 구르기 쿨타임 진행률 (0 = 바로 쓸 수 있음, 1 = 방금 써서 쿨타임 꽉 참).
-    // DodgeCooldownUI.cs가 이 값을 읽어서 쿨타임 게이지(회색 오버레이)를 채운다.
     public float DodgeCooldownProgress01 => dodgeCooldown > 0f ? Mathf.Clamp01(dodgeCooldownTimer / dodgeCooldown) : 0f;
 
     void Awake()
@@ -129,31 +134,54 @@ public class Player : NetworkBehaviour
     }
 
     // 일반 Update(): 화면 프레임마다 확실히 호출되므로, "눌린 순간에만 true인" 입력(GetKeyDown)은
-    // 반드시 여기서 잡아야 한다. FixedUpdateNetwork() 안에서 직접 읽으면 놓칠 수 있음(아래 주석 참고).
+    // 반드시 여기서 잡아야 한다.
     void Update()
     {
         if (!HasInputAuthority) return; // 내 캐릭터가 아니면 여기서 끝
         if (PauseMenuManager.InputLocked) return; // 일시정지 메뉴 열림 → 입력 무시
 
-        // GetKeyDown은 눌린 그 프레임에만 true라, FixedUpdateNetwork 틱과 타이밍이
-        // 안 맞으면 눌러도 씹힐 수 있음. 그래서 여기서 확실히 잡아뒀다가 다음 네트워크
-        // 틱에서 소비한다 (입력 버퍼링).
         if (Input.GetKeyDown(KeyCode.Space))
         {
             dodgeRequested = true;
         }
-        // 게임오버 상태에서 R → 내 "재시작 원함" 표시 (LobbyPlayer.ToggleReady와 같은 패턴)
+        // 게임오버 상태에서 R → 내 "재시작 원함" 표시
         if (Input.GetKeyDown(KeyCode.R) && gameManager != null && gameManager.IsGameOver)
         {
             if (GameClock.Instance != null) GameClock.Instance.RequestRestart();
         }
-        
     }
 
     // Fusion이 네트워크 시뮬레이션 틱마다 호출하는 함수. 실제 이동/애니메이션 처리는 전부 여기서 한다.
     public override void FixedUpdateNetwork()
     {
         if (!HasInputAuthority) return; // 내 캐릭터가 아니면 여기서 끝
+
+        // ★ 내 주변에 적이 있는지 매 틱 직접 검사한다 (OnTriggerEnter 대신).
+        //   OverlapSphere는 레이어 충돌 매트릭스와 무관하게, 그 순간 그 자리에 콜라이더가
+        //   있으면(트리거 포함) 잡는다. 적이 프록시라 NetworkTransform으로 보간 이동해도
+        //   확실히 잡힘 — 호스트만 피격되고 게스트는 무적이던 버그의 해결책.
+        if (!IsDead && InvincibleTimer.ExpiredOrNotRunning(Runner))
+        {
+            int n = Physics.OverlapSphereNonAlloc(
+                transform.position + hitOffset, hitRadius, _hitBuf,
+                ~0, QueryTriggerInteraction.Collide); // 적 콜라이더는 트리거라 Collide 필수
+
+            for (int i = 0; i < n; i++)
+            {
+                var enemy = _hitBuf[i].GetComponentInParent<Enemy>();
+                if (enemy == null) continue; // 적이 아니면 무시 (벽/하트/다른 플레이어 등)
+
+                Health = Mathf.Max(0, Health - 1);
+                InvincibleTimer = TickTimer.CreateFromSeconds(Runner, invincibleDuration);
+                if (Health <= 0) IsDead = true;
+
+                // 이 적을 없앨 수 있는 건 그 적의 주인(마스터)뿐 → RPC로 요청
+                if (enemy.Object != null && enemy.Object.IsValid)
+                    enemy.RPC_Consume();
+
+                break; // 한 틱에 한 대만 맞는다
+            }
+        }
 
         if (IsDead)
         {
@@ -189,7 +217,7 @@ public class Player : NetworkBehaviour
         vAxis = Input.GetAxisRaw("Vertical");
         wDown = Input.GetButton("Walk");
 
-        // 카메라가 바라보는 방향 기준으로 이동 방향을 계산 (쿼터뷰 게임이라 카메라 기준 이동이 자연스러움)
+        // 카메라가 바라보는 방향 기준으로 이동 방향을 계산
         Vector3 camForward = cam.forward;
         Vector3 camRight = cam.right;
         camForward.y = 0f;
@@ -225,8 +253,6 @@ public class Player : NetworkBehaviour
     }
 
     // Fusion이 렌더 프레임마다 호출한다 (내 캐릭터/상대 캐릭터 모두).
-    // 네트워크로 공유된 이동 상태를 Animator에 반영해서, 상대 클라에서도
-    // 그 캐릭터가 뛰거나 걷는 모습이 보이게 한다.
     public override void Render()
     {
         if (anim == null) return;
@@ -257,7 +283,7 @@ public class Player : NetworkBehaviour
             if (HasInputAuthority && DamageVignette.Instance != null)
                 DamageVignette.Instance.Flash(IsDead ? 3 : DamageVignette.Instance.blinks);
         }
-        // 체력이 늘었으면(부활): 돌아온 하트를 다시 보이게 (Heart 애니메이터를 기본 상태로 리셋)
+        // 체력이 늘었으면(부활): 돌아온 하트를 다시 보이게
         else if (Health > _lastSeenHealth)
         {
             for (int i = heartAnimators.Length - Health; i < heartAnimators.Length; i++)
@@ -289,41 +315,23 @@ public class Player : NetworkBehaviour
         isDodging = true;
         dodgeCooldownTimer = dodgeCooldown;
 
-        // Dodge 애니메이션 트리거는 Render()에서 DodgeVersion 변화를 감지해 재생한다
-        // (여기서 직접 쏘면 상대 클라에는 안 보임)
-
         yield return new WaitForSeconds(dodgeDuration);
 
         isDodging = false;
     }
 
-    // 마스터의 Enemy.OnTriggerEnter가 "이 플레이어가 적에 맞았다"고 통보하는 RPC.
-    // RpcSources.All  : 아무 클라(=마스터)나 호출 가능
-    // RpcTargets.StateAuthority : 이 캐릭터의 owner에서만 실행됨 → 거기서 Health를 깎는다
-    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
-    public void RPC_ApplyHit()
-    {
-        if (IsDead) return;
-        if (!InvincibleTimer.ExpiredOrNotRunning(Runner)) return; // 무적(i-frame) 중이면 무시
-
-        Health = Mathf.Max(0, Health - 1);
-        InvincibleTimer = TickTimer.CreateFromSeconds(Runner, invincibleDuration);
-
-        if (Health <= 0)
-            IsDead = true;
-    }
+    // ★ 삭제됨 : RPC_ApplyHit()
+    //   예전엔 마스터의 Enemy.OnTriggerEnter가 이 RPC로 데미지를 통보했지만,
+    //   이제 맞은 플레이어가 FixedUpdateNetwork의 OverlapSphere로 직접 처리한다.
+    //   (에디터 디버그 버튼 Editor_Hit은 Health를 직접 깎으므로 영향 없음)
 
     // 최대 체력(하트 칸 수). heartAnimators 길이를 그대로 쓴다.
     public int MaxHealth => heartAnimators != null ? heartAnimators.Length : 3;
 
     // 하트 아이템을 먹을 수 있는 상태인가 (살아있고 체력이 안 찬 경우).
-    // HeartPickup 이 "먹을 수 있을 때만" 하트를 소모하도록 이 값을 먼저 확인한다.
     public bool CanPickUpHeart => !IsDead && Health < MaxHealth;
 
-    // 하트 아이템 획득 시 HeartPickup 이 호출하는 RPC — RPC_ApplyHit 의 반대.
-    // RpcSources.All  : 아무 클라(=마스터)나 호출 가능
-    // RpcTargets.StateAuthority : 이 캐릭터의 owner에서만 실행 → 거기서 Health를 올린다.
-    // (하트 UI 는 Render() 의 "Health 증가" 분기가 heartAnimators[i].Rebind() 로 알아서 켬)
+    // 하트 아이템 획득 시 HeartPickup 이 호출하는 RPC.
     [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
     public void RPC_Heal()
     {
@@ -334,7 +342,6 @@ public class Player : NetworkBehaviour
     }
 
     // 다운 순간 처리. Render()에서 IsDead가 false→true로 바뀐 걸 감지하면 모든 클라에서 불린다.
-    // 여기서 죽이지 않고 "쓰러진" 상태로 둔다 — 팀원이 부활시킬 수 있음. 전원 다운 시에만 게임오버.
     private void HandleDeath()
     {
         anim.SetTrigger("Die");
@@ -357,7 +364,6 @@ public class Player : NetworkBehaviour
     }
 
     // 다운 상태에서 매 틱 실행 (내 캐릭터의 StateAuthority에서만).
-    // reviveRange 안에 살아있는 팀원이 있으면 ReviveProgress를 채우고, 다 차면 스스로 부활한다.
     private void UpdateRevive()
     {
         bool beingRevived = false;
@@ -389,7 +395,7 @@ public class Player : NetworkBehaviour
         }
     }
 
-    // 씬의 모든 플레이어가 다운 상태인가 (co-op 전멸 판정). 혼자 플레이면 = 내가 다운되면 true.
+    // 씬의 모든 플레이어가 다운 상태인가 (co-op 전멸 판정).
     private static bool AllPlayersDowned()
     {
         var players = FindObjectsByType<Player>(FindObjectsSortMode.None);
@@ -398,9 +404,6 @@ public class Player : NetworkBehaviour
             if (!p.IsDead) return false;
         return true;
     }
-    // Restart ballots are managed by the shared GameClock.
-
-    
 
     // 맞았을 때(죽지 않은 경우) 잠깐 빨갛게 깜박이는 연출. 무적 시간 자체는 InvincibleTimer가 담당.
     private IEnumerator HitFlashRoutine()
@@ -413,7 +416,7 @@ public class Player : NetworkBehaviour
             if (showRed)
                 SetBodyColor(Color.red);
             else
-                ClearBodyColor(); // 원래 머티리얼 색(흰색이 아님)으로 정확히 복원
+                ClearBodyColor(); // 원래 머티리얼 색으로 정확히 복원
             showRed = !showRed;
 
             yield return new WaitForSeconds(flashInterval);
@@ -424,8 +427,6 @@ public class Player : NetworkBehaviour
     }
 
     // 캐릭터 몸 파츠 전체를 지정한 색으로 덮어씌우는 헬퍼 (피격 깜박임용).
-    // 셰이더(XRay_Mesh2DLit_Default)의 실제 색상 프로퍼티는 _BaseColor다. (예전엔 _White를 썼는데,
-    // 지금 셰이더엔 그런 프로퍼티가 없어서 조용히 무시되고 있었음 — 그래서 빨간 점등이 안 보였던 것)
     private void SetBodyColor(Color color)
     {
         var block = new MaterialPropertyBlock();
@@ -433,17 +434,12 @@ public class Player : NetworkBehaviour
         {
             r.GetPropertyBlock(block);
             block.SetColor("_BaseColor", color);
-            // 이 머티리얼은 _GlowEnabled=1, _GlowIntensity=10짜리 강한 흰색 발광(Emission)이 켜져 있어서,
-            // _BaseColor만 바꾸면 발광이 덮어버려서 색이 전혀 안 보인다. 발광 색도 같이 바꿔줘야
-            // 실제로 화면에서 빨갛게 보인다. (스크린샷으로 직접 확인한 원인)
             block.SetColor("_EmissionColor", color);
             r.SetPropertyBlock(block);
         }
     }
 
     // SetBodyColor로 덮어씌운 색을 걷어내고 머티리얼 원래 색으로 되돌린다.
-    // Color.white로 강제로 되돌리지 않는 이유: 이 캐릭터 머티리얼의 원래 베이스 컬러는
-    // 흰색이 아니라 아주 어두운 회색(0.03,0.03,0.03)이라, 흰색으로 덮으면 오히려 밝기가 이상해짐.
     private void ClearBodyColor()
     {
         foreach (var r in bodyRenderers)
@@ -454,7 +450,6 @@ public class Player : NetworkBehaviour
 
 #if UNITY_EDITOR
     // ── 에디터 디버그용 (빌드에서 제외됨). PlayerEditor 커스텀 인스펙터의 버튼이 호출한다.
-    //    자기 캐릭터(StateAuthority)에만 먹는다.
     public void Editor_Hit()
     {
         if (!HasStateAuthority || IsDead) return;

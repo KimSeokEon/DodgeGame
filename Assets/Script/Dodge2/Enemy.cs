@@ -78,6 +78,7 @@
 //     }
 // }
 
+using System.Collections;
 using Fusion;
 using UnityEngine;
 
@@ -97,9 +98,8 @@ public class Enemy : NetworkBehaviour
 
     [SerializeField] private float delaytime = 0.5f; // 스폰 직후 이 시간 동안 충돌 판정 off
     private float lifetime = 20f;                    // 이 시간 지나면 자동 정리
-
-    [Networked] private TickTimer CollisionDelay { get; set; } // delaytime 대체
-    [Networked] private TickTimer LifeTimer { get; set; }      // Destroy(,20f) 대체
+    
+    [Networked] private TickTimer LifeTimer { get; set; }      // Destroy(,20f) 대체 (마스터 만 사용)
 
     private BoxCollider col;
 
@@ -108,21 +108,25 @@ public class Enemy : NetworkBehaviour
     {
         col = GetComponent<BoxCollider>();
         col.enabled = false;
+        StartCoroutine(EnableColliderSoon()); // 전 클라 각자 delaytime 뒤에 켠다 (권한 무관하게 실행됨)
 
         if (HasStateAuthority)
-        {
-            CollisionDelay = TickTimer.CreateFromSeconds(Runner, delaytime);
-            LifeTimer = TickTimer.CreateFromSeconds(Runner, lifetime);
-        }
+            LifeTimer = TickTimer.CreateFromSeconds(Runner, lifetime); //수명은 마스터만 관리
+    }
+
+    // 스폰 직후 delaytime 동안 충돌 판정을 꺼뒀다가 켠다.
+    // 코루틴이라 authority와 무관하게 마스터/게스트 양쪽에서 다 돈다.
+    // (예전엔 [Networked] TickTimer로 했는데, 그 값은 마스터만 세팅해서
+    //  게스트 쪽 프록시 적은 콜라이더가 영영 안 켜졌었다 — 게스트 무적 버그의 원인)
+    private IEnumerator EnableColliderSoon()
+    {
+        yield return new WaitForSeconds(delaytime);
+        if (col != null) col.enabled = true;
     }
 
     // Update() 대신 FixedUpdateNetwork() — 네트워크 틱마다 호출
     public override void FixedUpdateNetwork()
     {
-        // 충돌 판정 켜기: 모든 클라에서
-        if (!col.enabled && CollisionDelay.Expired(Runner))
-            col.enabled = true;
-
         // 이동 / 수명 관리: 마스터(StateAuthority)만
         if (!HasStateAuthority) return;
 
@@ -146,28 +150,19 @@ public class Enemy : NetworkBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        if (!HasStateAuthority) return; // 충돌 판정도 마스터만
+        if (!HasStateAuthority) return; // 벽 판정은 여전히 마스터만
 
         if (other.CompareTag("Wall"))
-        {
             Runner.Despawn(Object);
-        }
-        else if (other.CompareTag("Player"))
-        {
-            Player player = other.GetComponentInParent<Player>();
 
-            // 다운된 플레이어(또는 판별 불가)는 그냥 통과한다.
-            // 적을 despawn하지도, 데미지를 주지도 않음 → 쓰러진 몸이 "적 지우개"가 되지 않게.
-            // 부활은 콜라이더가 아니라 거리(transform.position)로 판정하므로 영향 없음.
-            if (player == null || player.IsDead)
-                return;
-
-            // 마스터가 유일한 충돌 판정자. 맞은 플레이어의 owner에게 RPC로 데미지를 통보한다.
-            // (Health를 여기서 직접 못 깎는 이유: 마스터는 상대 플레이어 오브젝트의
-            //  StateAuthority가 아니라서 그 [Networked] 값을 쓸 수 없음)
-            player.RPC_ApplyHit();
-
-            Runner.Despawn(Object);
-        }
+        // 플레이어 피격은 이제 Player.cs 가 스스로 판정한다 (여기서 안 함)
     }
+
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    public void RPC_Consume()
+    {
+        if (Object != null && Object.IsValid)
+            Runner.Despawn(Object);
+    }
+    
 }
